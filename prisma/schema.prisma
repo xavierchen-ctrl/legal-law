@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Contract {
+  id                 String    @id @default(uuid())
+  contractNumber     String    @unique // e.g., W250001
+  requestDate        DateTime  @default(now())
+  department         String
+  requester          String
+  requesterEmail     String?
+  counterparty       String
+  documentName       String
+  paymentTerms       String?
+  financialTerms     String?
+  
+  // Status & Priority
+  priority           Priority  @default(NORMAL)
+  status             Status    @default(SUBMITTED)
+  
+  // Tracking Dates
+  estimatedReplyDate DateTime?
+  replyDates         String?   // JSON string storing date history
+  closeDate          DateTime?
+  closeReason        String?
+  
+  // Archiving
+  archivedPhysical   Boolean   @default(false)
+  archivedDigital    Boolean   @default(false)
+  
+  // Automation
+  notificationSent   Boolean   @default(false)
+  
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+enum Priority {
+  NORMAL
+  URGENT
+}
+
+enum Status {
+  SUBMITTED         // 申請中
+  IN_REVIEW         // 法務審閱中
+  AWAITING_FEEDBACK // 待需求單位回覆
+  PAUSED            // 暫停中
+  CLOSED            // 已結案
+}

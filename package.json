@@ -9,16 +9,28 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.1",
+    "@types/nodemailer": "^7.0.5",
+    "@types/papaparse": "^5.5.2",
+    "date-fns": "^4.1.0",
     "next": "16.1.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.12",
+    "papaparse": "^5.5.3",
+    "prisma": "^6.19.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "use-debounce": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.23",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5"
   }
 }
