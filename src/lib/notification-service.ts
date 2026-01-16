@@ -1,10 +1,13 @@
 import { sendNotificationEmail } from '@/lib/email';
 import { differenceInCalendarDays, addBusinessDays, isValid } from 'date-fns';
 import { fetchContractsFromSheet } from '@/lib/google-sheets';
+import { logSystemEvent } from './logger';
 
 export async function checkAndSendOverdueNotifications() {
     const results = [];
+    console.log('[NotificationService] Starting Overdue Check...');
     try {
+        await logSystemEvent('Daily_Check', 'INFO', 'Starting daily overdue check...');
         const contracts = await fetchContractsFromSheet();
         const ceoEmail = process.env.CEO_EMAIL || 'ceo@example.com';
         // Allow multiple additional recipients via ENV (comma separated)
@@ -114,15 +117,20 @@ export async function checkAndSendOverdueNotifications() {
                 }
             }
         }
+        const summaryMsg = `Processed ${contracts.length} contracts. Overdue: ${results.length}.`;
+        await logSystemEvent('Daily_Check', 'SUCCESS', summaryMsg);
         return { success: true, processed: results.length, details: results };
     } catch (error) {
         console.error('Check failed:', error);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        await logSystemEvent('Daily_Check', 'ERROR', errMsg);
         return { success: false, error };
     }
 }
 
 export async function sendCeoUnclosedSummary(targetEmail?: string) {
     try {
+        await logSystemEvent('Weekly_Report', 'INFO', 'Preparing weekly CEO summary...');
         const contracts = await fetchContractsFromSheet();
         const ceoEmail = targetEmail || process.env.CEO_EMAIL || 'ceo@example.com';
 
@@ -174,11 +182,13 @@ export async function sendCeoUnclosedSummary(targetEmail?: string) {
         `;
 
         await sendNotificationEmail(ceoEmail, subject, html);
+        await logSystemEvent('Weekly_Report', 'SUCCESS', `Sent summary for ${ceoContracts.length} items to ${ceoEmail}`);
         return { success: true, count: ceoContracts.length };
 
     } catch (error) {
         console.error('CEO Summary failed:', error);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        await logSystemEvent('Weekly_Report', 'ERROR', errMsg);
         return { success: false, error };
     }
 }
-
