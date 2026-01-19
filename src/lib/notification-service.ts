@@ -134,6 +134,14 @@ export async function sendCeoUnclosedSummary(targetEmail?: string) {
         const contracts = await fetchContractsFromSheet();
         const ceoEmail = targetEmail || process.env.CEO_EMAIL || 'ceo@example.com';
 
+        // Include additional recipients from ENV
+        const envRecipients = process.env.NOTIFICATION_RECIPIENTS
+            ? process.env.NOTIFICATION_RECIPIENTS.split(',').map(e => e.trim())
+            : [];
+
+        // Combine CEO + Additional Recipients (Unique)
+        const allRecipients = Array.from(new Set([ceoEmail, ...envRecipients]));
+
         // Filter: Department contains "執行長" AND Status is not CLOSED
         const ceoContracts = contracts.filter(c => {
             if (c.status === 'CLOSED') return false;
@@ -181,8 +189,8 @@ export async function sendCeoUnclosedSummary(targetEmail?: string) {
             </div>
         `;
 
-        await sendNotificationEmail(ceoEmail, subject, html);
-        await logSystemEvent('Weekly_Report', 'SUCCESS', `Sent summary for ${ceoContracts.length} items to ${ceoEmail}`);
+        await sendNotificationEmail(allRecipients.join(','), subject, html);
+        await logSystemEvent('Weekly_Report', 'SUCCESS', `Sent summary for ${ceoContracts.length} items to ${allRecipients.join(', ')}`);
         return { success: true, count: ceoContracts.length };
 
     } catch (error) {
