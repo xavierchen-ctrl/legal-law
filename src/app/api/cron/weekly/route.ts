@@ -8,8 +8,11 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const { searchParams } = new URL(request.url);
+        const targetEmail = searchParams.get('targetEmail');
+
         console.log('[Cron] Starting Weekly CEO Report...');
-        const result = await sendCeoUnclosedSummary();
+        const result = await sendCeoUnclosedSummary(targetEmail || undefined);
         console.log('[Cron] Weekly Report Complete:', result);
 
         return NextResponse.json(result);
