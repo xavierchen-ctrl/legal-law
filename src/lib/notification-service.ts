@@ -146,6 +146,11 @@ export async function sendCeoUnclosedSummary(targetEmail?: string) {
         const ceoContracts = contracts.filter(c => {
             if (c.status === 'CLOSED') return false;
             if (!c.requestDate || c.requestDate.trim() === '') return false; // Ignore placeholders
+
+            // Legacy Filter: Skip logic for old contracts (Before W250056)
+            const contractNumStr = c.contractNumber.replace(/\D/g, '');
+            const contractNumVal = parseInt(contractNumStr, 10);
+            if (!isNaN(contractNumVal) && contractNumVal < 250056) return false;
             // Check department (fuzzy match)
             if (c.department && c.department.includes('執行長')) return true;
             return false;

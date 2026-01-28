@@ -1,6 +1,5 @@
-import Papa from 'papaparse';
-
-const SHEET_csv_URL = 'https://docs.google.com/spreadsheets/d/1S8CG7PyILAGK57Y7zNzwf4B9_XX4kGmzeBH84bUjhwE/export?format=csv&gid=1607545574';
+import { google } from 'googleapis';
+import { JWT } from 'google-auth-library';
 
 export interface SheetContract {
     id: string; // Map from 合約編號
@@ -8,45 +7,93 @@ export interface SheetContract {
     requestDate: string;
     department: string;
     requester: string;
-    requesterEmail?: string; // Not in sheet, maybe hardcode or leave empty
+    requesterEmail?: string;
     counterparty: string;
     documentName: string;
     priority: 'URGENT' | 'NORMAL';
     status: string;
     estimatedReplyDate: string | null;
-    lastReplyDate: string | null; // New field for Post-Review Tracking
+    lastReplyDate: string | null;
+}
+
+// Reuse Auth logic
+async function getSheetsClient() {
+    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+        throw new Error('Missing Google Credentials');
+    }
+
+    const client = new JWT({
+        email: process.env.GOOGLE_CLIENT_EMAIL,
+        key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'], // Read-only is enough for fetching contracts
+    });
+
+    return google.sheets({ version: 'v4', auth: client });
+}
+
+function getSpreadsheetId() {
+    const csvUrl = process.env.SHEET_CSV_URL;
+    if (!csvUrl) throw new Error('Missing SHEET_CSV_URL');
+    const match = csvUrl.match(/\/d\/(.*?)(\/|$)/);
+    return match ? match[1] : null; // Extract ID from URL even if CSV feature is disabled
 }
 
 export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
     try {
-        const res = await fetch(SHEET_csv_URL, { cache: 'no-store' });
-        const csvText = await res.text();
+        const sheets = await getSheetsClient();
+        const spreadsheetId = getSpreadsheetId();
 
-        // Find the start of the real header: "合約編號/取單號"
-        const headerStart = csvText.indexOf('合約編號/取單號');
-        if (headerStart === -1) {
-            console.error('Could not find header row in CSV');
+        if (!spreadsheetId) {
+            console.error('Invalid Spreadsheet ID extraction');
             return [];
         }
 
-        // Slice from the header start
-        const cleanCsv = csvText.substring(headerStart);
+        // Fetch all data from the first sheet (gid=0 usually implies first tab, but API uses name or "Sheet1")
+        // Since we don't know the exact tab name, we'll try to list sheets or assume "表單回應 1" (common for Forms) or just range 'A:Z' if single sheet.
+        // Safer: Get spreadsheet metadata to find the Sheet Name corresponding to the main data.
+        // But for speed, let's assume the data is on the first available sheet or try a broad range.
+        // Let's try fetching the spreadsheet detail first to get the first sheet's name.
 
-        const result = Papa.parse(cleanCsv, {
-            header: true,
-            skipEmptyLines: true,
+        const meta = await sheets.spreadsheets.get({ spreadsheetId });
+        const sheetName = meta.data.sheets?.[0]?.properties?.title;
+
+        if (!sheetName) throw new Error('No sheets found');
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetName}!A:Z`, // Fetch columns A to Z (should cover mostly everything)
         });
 
-        const data = result.data as any[];
-        // console.log(`Parsed ${data.length} rows from Google Sheet`);
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) return [];
 
-        return data.map((row, index) => {
-            // Helper to find value by partial key match
-            const getValue = (r: any, partialKey: string) => {
-                const key = Object.keys(r).find(k => k.includes(partialKey));
-                return key ? r[key] : '';
-            };
+        // 1. Find Header Row
+        let headerRowIndex = -1;
+        const targetHeader = '合約編號'; // Relaxed match to handle newlines or slash variants
 
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i].some((cell: string) => cell && cell.includes(targetHeader))) {
+                headerRowIndex = i;
+                break;
+            }
+        }
+
+        if (headerRowIndex === -1) {
+            console.error('Could not find header row in Sheet');
+            return [];
+        }
+
+        const headers = rows[headerRowIndex].map((h: string) => h.trim());
+        const dataRows = rows.slice(headerRowIndex + 1);
+
+        // Map Helper
+        const getValue = (row: any[], headerNamePartial: string) => {
+            const index = headers.findIndex((h: string) => h.includes(headerNamePartial));
+            if (index === -1) return '';
+            return row[index] || '';
+        };
+
+        return dataRows.map((row, index) => {
             const contractNumber = getValue(row, '合約編號') || getValue(row, '取單號') || `UNKNOWN-${index}`;
             const priorityCell = getValue(row, '急件');
             const priority = priorityCell.includes('急件') ? 'URGENT' : 'NORMAL';
@@ -64,30 +111,25 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
                 status = 'IN_REVIEW';
             }
 
-            const counterparty = getValue(row, '相對人');
-            const requestDateRaw = getValue(row, '申請日期');
-
-            // Find Latest Reply Date (1st to 4th)
+            // Find Latest Reply Date
             let lastReplyDate = null;
-            const replyDates = [
-                getValue(row, '第4次回覆日'),
-                getValue(row, '第3次回覆日'),
-                getValue(row, '第2次回覆日'),
-                getValue(row, '第1次回覆日')
-            ];
-            // Find the first non-empty, non-dash date
-            const validReplyDate = replyDates.find(d => d && d.trim() !== '' && d.trim() !== '-');
-            if (validReplyDate) {
-                lastReplyDate = validReplyDate;
+            const replyTags = ['第4次回覆日', '第3次回覆日', '第2次回覆日', '第1次回覆日'];
+
+            for (const tag of replyTags) {
+                const val = getValue(row, tag);
+                if (val && val.trim() !== '' && val.trim() !== '-') {
+                    lastReplyDate = val;
+                    break;
+                }
             }
 
             return {
                 id: contractNumber,
                 contractNumber,
-                requestDate: requestDateRaw,
+                requestDate: getValue(row, '申請日期'),
                 department: getValue(row, '需求單位'),
                 requester: getValue(row, '申請人'),
-                counterparty: counterparty,
+                counterparty: getValue(row, '相對人'),
                 documentName: getValue(row, '文件名稱'),
                 priority,
                 status,
@@ -95,8 +137,9 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
                 lastReplyDate,
             };
         });
+
     } catch (error) {
-        console.error('Error fetching sheet:', error);
+        console.error('Error fetching sheet via API:', error);
         return [];
     }
 }

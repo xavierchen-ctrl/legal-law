@@ -150,9 +150,14 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
           <a href="https://docs.google.com/spreadsheets/d/1S8CG7PyILAGK57Y7zNzwf4B9_XX4kGmzeBH84bUjhwE/edit" target="_blank" className="btn btn-primary">
             前往試算表作業
           </a>
-          <Link href="/admin/logs" className="btn bg-gray-100 hover:bg-gray-200 text-gray-700">
-            系統日誌
-          </Link>
+          <div className="flex gap-4">
+            <Link href="/admin/logs" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
+              <span>📋</span> 系統日誌
+            </Link>
+            <Link href="/admin/keywords" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
+              <span>🔍</span> 關鍵字監控
+            </Link>
+          </div>
         </div>
       </header>
 
