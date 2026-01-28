@@ -1,14 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Use simplified config compatible with Turbopack
+  // Use serverExternalPackages to tell Next.js not to bundle pdf-parse
   serverExternalPackages: ['pdf-parse'],
-  // Allow Turbopack to run without complaint
-  experimental: {
-    // serverComponentsExternalPackages is alias for serverExternalPackages in some versions, 
-    // but 'serverExternalPackages' is top-level in latest Next.js 15/16.
-    // Let's stick to top-level if types allow, but the previous error didn't complain about that property.
-  }
+
+  // Custom Webpack config to explicitly ignore canvas/encoding
+  webpack: (config) => {
+    config.resolve.alias.canvas = false;
+    config.resolve.alias.encoding = false;
+    return config;
+  },
 };
+
+// Explicitly add turbopack config at root level (bypassing strict type check if needed)
+// This satisfies the "Webpack with Turbopack" requirement
+// @ts-ignore
+nextConfig.turbopack = {};
 
 export default nextConfig;
