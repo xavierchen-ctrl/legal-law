@@ -94,17 +94,20 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
         };
 
         return dataRows.map((row, index) => {
-            const cNum = getValue(row, '合約編號') || getValue(row, '取單號');
-            const docName = getValue(row, '文件名稱');
+            const rawCNum = getValue(row, '合約編號') || getValue(row, '取單號');
+            const rawDocName = getValue(row, '文件名稱');
 
-            // Skip empty rows
+            const cNum = rawCNum ? rawCNum.trim() : '';
+            const docName = rawDocName ? rawDocName.trim() : '';
+
+            // Skip empty rows (even if they have spaces)
             if (!cNum && !docName) return null;
 
             const contractNumber = cNum || `UNKNOWN-${index}`;
             const priorityCell = getValue(row, '急件');
             const priority = priorityCell.includes('急件') ? 'URGENT' : 'NORMAL';
 
-            const statusRaw = getValue(row, '審閱進度');
+            const statusRaw = getValue(row, '狀態選單') || getValue(row, '審閱進度');
             let status = 'SUBMITTED';
 
             if (statusRaw.includes('已結案') || statusRaw.includes('完成') || statusRaw.includes('結案')) {
