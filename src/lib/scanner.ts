@@ -1,4 +1,3 @@
-const pdf = require('pdf-parse');
 import { listFiles, downloadFile } from './drive-service';
 import { getKeywords, getProcessedFileIds, logScanResult, KeywordRule } from './keyword-service';
 import { sendNotificationEmail } from './email';
@@ -41,6 +40,9 @@ export async function scanAndNotify() {
         try {
             // Download & Extract Text
             const buffer = await downloadFile(file.id);
+            // Dynamic import to avoid build-time bundling issues with canvas/dom
+            // @ts-ignore
+            const pdf = (await import('pdf-parse')).default; // or use require('pdf-parse') if ESM fails
             const data = await pdf(buffer);
             const content = data.text; // The raw text content
 
