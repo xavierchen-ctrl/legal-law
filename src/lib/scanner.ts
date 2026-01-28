@@ -75,8 +75,8 @@ export async function scanAndNotify() {
 
                 const recipients = Array.from(emailsToSend);
                 if (recipients.length > 0) {
-                    // await sendNotificationEmail(recipients.join(','), subject, body);
-                    console.log(`[TEST MODE] Email would be sent to ${recipients.length} recipients: ${recipients.join(',')}`);
+                    await sendNotificationEmail(recipients.join(','), subject, body);
+                    console.log(`Email sent to ${recipients.length} recipients.`);
                 }
             }
 
