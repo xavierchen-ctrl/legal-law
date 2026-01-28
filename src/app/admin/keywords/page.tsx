@@ -1,11 +1,9 @@
 import { getKeywords, addKeyword, deleteKeyword } from '@/lib/keyword-service';
 import { revalidatePath } from 'next/cache';
-
-export const dynamic = 'force-dynamic';
-
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
+
 
 export default async function KeywordAdminPage() {
     const rules = await getKeywords();
