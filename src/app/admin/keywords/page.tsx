@@ -79,7 +79,7 @@ export default async function KeywordAdminPage() {
             </div>
 
             <div className="mt-6 text-sm text-gray-500">
-                <p>💡 說明：系統每天 (凌晨 02:00) 會掃描一次 Google Drive 指定資料夾的新增檔案。若內容包含上述關鍵字，將發信通知指定人員。</p>
+                <p>💡 說明：系統每天 (上午 08:00) 會掃描一次 Google Drive 指定資料夾的新增檔案。若內容包含上述關鍵字，將發信通知指定人員。</p>
                 <p>🗑️ 刪除規則：目前請直接前往 <a href={process.env.SHEET_CSV_URL?.replace('/pub?gid=0&single=true&output=csv', '')} target="_blank" className="text-blue-600 underline">Google Sheets (Keyword_Rules 分頁)</a> 刪除整行。</p>
             </div>
         </div>

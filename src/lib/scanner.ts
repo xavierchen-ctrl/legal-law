@@ -28,6 +28,9 @@ export async function scanAndNotify() {
     let processedCount = 0;
     let matchCount = 0;
 
+    // Map<Email, List of Matched Items>
+    const pendingNotifications = new Map<string, Array<{ fileName: string, link?: string, keywords: string[] }>>();
+
     // 3. Process Each File
     for (const file of files) {
         // Skip if already scanned
@@ -60,24 +63,21 @@ export async function scanAndNotify() {
                 }
             }
 
-            // Action: Notification
+            // Collect for Batch Notification (Do not send immediately)
             if (foundMatches.length > 0) {
                 matchCount++;
-                const subject = `[Legal Alert] 發現關鍵字: ${file.name}`;
-                const body = `
-                    <h3>文件掃描通知</h3>
-                    <p>在檔案 <strong>${file.name}</strong> 中發現關注的關鍵字。</p>
-                    <ul>
-                        ${foundMatches.map(k => `<li>${k}</li>`).join('')}
-                    </ul>
-                    <p>請前往 Google Drive 查看詳細內容。</p>
-                `;
+                const item = {
+                    fileName: file.name,
+                    link: file.webViewLink,
+                    keywords: foundMatches
+                };
 
-                const recipients = Array.from(emailsToSend);
-                if (recipients.length > 0) {
-                    await sendNotificationEmail(recipients.join(','), subject, body);
-                    console.log(`Email sent to ${recipients.length} recipients.`);
-                }
+                emailsToSend.forEach(email => {
+                    if (!pendingNotifications.has(email)) {
+                        pendingNotifications.set(email, []);
+                    }
+                    pendingNotifications.get(email)!.push(item);
+                });
             }
 
             // Log to History (Always log to prevent re-scanning, even if no match)
@@ -90,7 +90,50 @@ export async function scanAndNotify() {
         }
     }
 
-    const resultMsg = `Scanned ${processedCount} new files, found ${matchCount} matches.`;
-    await logSystemEvent('Drive_Scan', 'SUCCESS', resultMsg);
-    return { success: true, message: resultMsg };
+    // 4. Send Batch Notifications
+    for (const [email, items] of pendingNotifications) {
+        const subject = `[每日掃描彙報] 發現 ${items.length} 個關注檔案`;
+
+        const rows = items.map(item => `
+            <div style="margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
+                <p style="margin: 5px 0;"><strong>檔案：</strong> ${item.fileName}</p>
+                <p style="margin: 5px 0;"><strong>關鍵字：</strong> <span style="color: #d32f2f;">${item.keywords.join(', ')}</span></p>
+                <p style="margin: 5px 0;">
+                    <a href="${item.link}" target="_blank" style="color: #1a73e8; text-decoration: none;">開啟檔案 &rarr;</a>
+                </p>
+            </div>
+        `).join('');
+
+        const body = `
+            <h3>文件掃描每日彙報</h3>
+            <p>系統在今日掃描中，為您發現了以下 ${items.length} 個包含關注關鍵字的檔案：</p>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; border: 1px solid #ddd;">
+                ${rows}
+            </div>
+            <p style="font-size: 12px; color: gray; margin-top: 20px;">
+                此為每日自動掃描報告 (${new Date().toLocaleDateString()})
+            </p>
+        `;
+
+        try {
+            await sendNotificationEmail(email, subject, body);
+            console.log(`Digest email sent to ${email} with ${items.length} items.`);
+        } catch (err) {
+            console.error(`Failed to send digest to ${email}`, err);
+        }
+    }
+
+    // Log to History (Always log to prevent re-scanning, even if no match)
+    await logScanResult(file.id, file.name, foundMatches);
+    processedCount++;
+
+} catch (error) {
+    console.error(`Failed to process file ${file.name}:`, error);
+    await logSystemEvent('Scanner_Error', 'ERROR', `Failed ${file.name}: ${error}`);
+}
+    }
+
+const resultMsg = `Scanned ${processedCount} new files, found ${matchCount} matches.`;
+await logSystemEvent('Drive_Scan', 'SUCCESS', resultMsg);
+return { success: true, message: resultMsg };
 }

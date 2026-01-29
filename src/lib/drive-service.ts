@@ -7,6 +7,7 @@ export interface DriveFile {
     name: string;
     mimeType: string;
     createdTime?: string;
+    webViewLink?: string;
 }
 
 // Reuse Auth logic (Should ideally be a shared helper, but keeping isolated for safety)
@@ -33,7 +34,7 @@ export async function listFiles(folderId: string): Promise<DriveFile[]> {
 
     const res = await drive.files.list({
         q: query,
-        fields: 'files(id, name, mimeType, createdTime)',
+        fields: 'files(id, name, mimeType, createdTime, webViewLink)',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
         orderBy: 'createdTime desc', // Process newest first
