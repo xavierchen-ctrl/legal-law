@@ -17,21 +17,21 @@ export interface SheetContract {
 }
 
 // Reuse Auth logic
-async function getSheetsClient() {
+export async function getSheetsClient() {
     if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
         throw new Error('Missing Google Credentials');
     }
 
     const client = new JWT({
         email: process.env.GOOGLE_CLIENT_EMAIL,
-        key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
         scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'], // Read-only is enough for fetching contracts
     });
 
     return google.sheets({ version: 'v4', auth: client });
 }
 
-function getSpreadsheetId() {
+export function getSpreadsheetId() {
     const csvUrl = process.env.SHEET_CSV_URL;
     if (!csvUrl) throw new Error('Missing SHEET_CSV_URL');
     const match = csvUrl.match(/\/d\/(.*?)(\/|$)/);
@@ -122,13 +122,25 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
 
             // Find Latest Reply Date
             let lastReplyDate = null;
-            const replyTags = ['第4次回覆日', '第3次回覆日', '第2次回覆日', '第1次回覆日'];
 
-            for (const tag of replyTags) {
-                const val = getValue(row, tag);
+            // Logic: Find all columns that match "回覆日" or "回覆日期" (but exclude "預計")
+            // The sheet has multiple columns (K, L, M...) named "回覆日".
+            const replyIndices = headers
+                .map((h: string, i: number) => ({ h, i }))
+                .filter(item => {
+                    const h = item.h;
+                    return (h.includes('回覆日') || h.includes('回覆日期')) && !h.includes('預計');
+                })
+                .map(item => item.i);
+
+            // Iterate through these columns in the row
+            for (const idx of replyIndices) {
+                const val = row[idx];
                 if (val && val.trim() !== '' && val.trim() !== '-') {
-                    lastReplyDate = val;
-                    break;
+                    // We found a reply date.
+                    // Since we want the *latest* one, and usually they are filled left-to-right (K->L->M),
+                    // we can keep updating lastReplyDate.
+                    lastReplyDate = val.trim();
                 }
             }
 

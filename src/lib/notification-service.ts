@@ -11,13 +11,20 @@ export async function checkAndSendOverdueNotifications() {
         await logSystemEvent('Daily_Check', 'INFO', 'Starting daily overdue check...');
         const contracts = await fetchContractsFromSheet();
         const ceoEmail = process.env.CEO_EMAIL || 'ceo@example.com';
-        // Allow multiple additional recipients via ENV (comma separated)
+
+        // Admin Recipients (for Digest)
         const envRecipients = process.env.NOTIFICATION_RECIPIENTS
             ? process.env.NOTIFICATION_RECIPIENTS.split(',').map(e => e.trim())
             : [];
+        const adminRecipients = Array.from(new Set([ceoEmail, ...envRecipients]));
 
-        // Base Recipients for every email (CEO + Configured List)
-        const baseRecipients = Array.from(new Set([ceoEmail, ...envRecipients]));
+        // Collection for Digest
+        interface OverdueItem { contract: any; days: number; type: string; recipient?: string; }
+        const pendingDigestItems: OverdueItem[] = [];
+
+        // Collection for Individual Requester Notifications
+        // Map<Email, List<Items>>
+        const requesterNotifications = new Map<string, OverdueItem[]>();
 
         for (const contract of contracts) {
             if (contract.status === 'CLOSED') continue;
@@ -58,31 +65,20 @@ export async function checkAndSendOverdueNotifications() {
                 if (contract.priority === 'URGENT' && overdueDays > 1) shouldNotify = true;
                 else if (contract.priority === 'NORMAL' && overdueDays > 3) shouldNotify = true;
 
+                // FIX: If Legal has already replied, it is NOT 'Review Overdue' anymore.
+                // It moves to 'Post-Review' tracking (Check 2).
+                if (contract.lastReplyDate) shouldNotify = false;
+
                 if (shouldNotify) {
-                    const recipients = [...baseRecipients];
-                    if (contract.requesterEmail) recipients.push(contract.requesterEmail);
-                    // Remove duplicates
-                    const uniqueRecipients = Array.from(new Set(recipients));
+                    const item = { contract, days: overdueDays, type: '審閱逾期', recipient: contract.requesterEmail };
+                    pendingDigestItems.push(item);
 
-                    const subject = `[逾期通知] 合約 ${contract.contractNumber} (${contract.priority === 'URGENT' ? '急件' : '普通'}) 已超過審閱期限`;
-                    const html = `
-            <div style="font-family: sans-serif; padding: 20px;">
-                <h2 style="color: #d32f2f;">合約審閱逾期通知</h2>
-                <p>以下合約已超過系統計算之預定回覆日期 (申請日 + 工期)，請儘速處理。</p>
-                <hr />
-                <ul>
-                <li><strong>合約編號:</strong> ${contract.contractNumber}</li>
-                <li><strong>文件名稱:</strong> ${contract.documentName}</li>
-                <li><strong>申請人:</strong> ${contract.requester}</li>
-                <li><strong>申請日期:</strong> ${contract.requestDate}</li>
-                <li><strong>預定回覆日:</strong> ${deadline.toLocaleDateString()}</li>
-                <li><strong>逾期天數:</strong> ${overdueDays} 天</li>
-                </ul>
-                <p style="margin-top: 20px; color: gray; font-size: 12px;">此為系統自動發送，請勿直接回覆。</p>
-            </div>
-            `;
-
-                    await sendNotificationEmail(uniqueRecipients.join(','), subject, html);
+                    if (contract.requesterEmail) {
+                        if (!requesterNotifications.has(contract.requesterEmail)) {
+                            requesterNotifications.set(contract.requesterEmail, []);
+                        }
+                        requesterNotifications.get(contract.requesterEmail)!.push(item);
+                    }
                     results.push({ id: contract.id, type: 'Review_Overdue' });
                 }
             }
@@ -94,34 +90,103 @@ export async function checkAndSendOverdueNotifications() {
                 if (replyDate) {
                     const postReviewDays = differenceInCalendarDays(today, replyDate);
                     if (postReviewDays > 14) {
-                        const recipients = [...baseRecipients];
-                        if (contract.requesterEmail) recipients.push(contract.requesterEmail);
-                        const uniqueRecipients = Array.from(new Set(recipients));
+                        const item = { contract, days: postReviewDays, type: '未結案逾期', recipient: contract.requesterEmail };
+                        pendingDigestItems.push(item);
 
-                        const subject = `[未結案警示] 合約 ${contract.contractNumber} 已回覆超過 14 天尚未結案`;
-                        const html = `
-              <div style="font-family: sans-serif; padding: 20px;">
-                <h2 style="color: #ed6c02;">合約未結案警示</h2>
-                <p>以下合約法務已於 <strong>${contract.lastReplyDate}</strong> 回覆，但迄今已超過 14 天仍未結案。</p>
-                <p>請確認是否已簽約完成，並更新試算表狀態。</p>
-                <hr />
-                <ul>
-                  <li><strong>合約編號:</strong> ${contract.contractNumber}</li>
-                  <li><strong>文件名稱:</strong> ${contract.documentName}</li>
-                  <li><strong>申請人:</strong> ${contract.requester}</li>
-                  <li><strong>最後回覆日:</strong> ${contract.lastReplyDate}</li>
-                  <li><strong>滯留天數:</strong> ${postReviewDays} 天</li>
-                </ul>
-                <p style="margin-top: 20px; color: gray; font-size: 12px;">此為系統自動發送，請勿直接回覆。</p>
-              </div>
-            `;
-                        await sendNotificationEmail(uniqueRecipients.join(','), subject, html);
+                        if (contract.requesterEmail) {
+                            if (!requesterNotifications.has(contract.requesterEmail)) {
+                                requesterNotifications.set(contract.requesterEmail, []);
+                            }
+                            requesterNotifications.get(contract.requesterEmail)!.push(item);
+                        }
                         results.push({ id: contract.id, type: 'PostReview_Overdue' });
                     }
                 }
             }
         }
-        const summaryMsg = `Processed ${contracts.length} contracts. Overdue: ${results.length}.`;
+
+        // --- SAFETY MECHANISM ---
+
+        // 1. Send Daily Digest to Admin (Always send if items exist)
+        if (pendingDigestItems.length > 0) {
+            const isDev = process.env.NODE_ENV === 'development';
+            const envTag = isDev ? '【測試站】' : '【正式站】';
+            const subject = `${envTag} [每日監控彙報] 系統共發現 ${pendingDigestItems.length} 筆異常案件`;
+
+            const rows = pendingDigestItems.map(item => `
+                <tr>
+                    <td style="border:1px solid #ddd;padding:8px">${item.type}</td>
+                    <td style="border:1px solid #ddd;padding:8px">${item.contract.contractNumber}</td>
+                    <td style="border:1px solid #ddd;padding:8px">${item.contract.documentName}</td>
+                    <td style="border:1px solid #ddd;padding:8px">${item.contract.requester} (${item.recipient || '無信箱'})</td>
+                    <td style="border:1px solid #ddd;padding:8px;color:red;font-weight:bold">${item.days} 天</td>
+                </tr>
+            `).join('');
+
+            const circuitBreakerTriggered = requesterNotifications.size > 20;
+            const alertHtml = circuitBreakerTriggered
+                ? `<div style="background:#fee;border:1px solid red;padding:10px;margin-bottom:15px;color:red;font-weight:bold">
+                    ⚠️ 安全閥啟動 (Circuit Breaker Triggered) <br/>
+                    今日預計發送 ${requesterNotifications.size} 封通知給申請人，已超過安全上限 (20)。<br/>
+                    系統已自動攔截所有給申請人的通知信，請管理員檢查是否為誤判。
+                   </div>`
+                : '';
+
+            const html = `
+                <div style="font-family: sans-serif; padding: 20px;">
+                    ${alertHtml}
+                    <h2>系統監控彙報</h2>
+                    <p>以下為今日掃描發現之逾期或異常案件總表：</p>
+                    <table style="border-collapse: collapse; width: 100%;">
+                        <thead>
+                            <tr style="background:#f5f5f5">
+                                <th style="border:1px solid #ddd;padding:8px;text-align:left">類型</th>
+                                <th style="border:1px solid #ddd;padding:8px;text-align:left">單號</th>
+                                <th style="border:1px solid #ddd;padding:8px;text-align:left">文件</th>
+                                <th style="border:1px solid #ddd;padding:8px;text-align:left">負責人</th>
+                                <th style="border:1px solid #ddd;padding:8px;text-align:left">逾期天數/滯留</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+
+            // Send Digest
+            await sendNotificationEmail(adminRecipients.join(','), subject, html);
+        }
+
+        // 2. Circuit Breaker for Requesters
+        // Limit: 20 distinct recipients
+        const SAFETY_LIMIT = 20;
+
+        if (requesterNotifications.size > SAFETY_LIMIT) {
+            const warningMsg = `Circuit Breaker Triggered! Attempted to notify ${requesterNotifications.size} users. Suppressed.`;
+            console.warn(warningMsg);
+            await logSystemEvent('Safety_Valve', 'WARNING', warningMsg);
+            // DO NOT SEND individual emails
+        } else {
+            // Send individual emails
+            for (const [email, items] of requesterNotifications) {
+                // Generate email content for this specific user
+                // Reuse simplified version of previous template logic, potentially combining items if user has multiple
+                const subject = `[案件通知] 您有 ${items.length} 筆合約案件需要關注`;
+                const itemRows = items.map(i => `<li>[${i.type}] <strong>${i.contract.contractNumber} ${i.contract.documentName}</strong> (已逾期 ${i.days} 天)</li>`).join('');
+
+                const html = `
+                    <div style="font-family: sans-serif; padding: 20px;">
+                        <h2 style="color: #d32f2f;">合約案件進度通知</h2>
+                        <p>系統偵測到您有以下案件進度落後或逾期：</p>
+                        <ul>${itemRows}</ul>
+                        <p style="margin-top: 20px; color: gray; font-size: 12px;">此為系統自動發送。</p>
+                    </div>
+                `;
+
+                await sendNotificationEmail(email, subject, html);
+            }
+        }
+
+        const summaryMsg = `Processed ${contracts.length} contracts. Found ${results.length} issues. Digest Sent. Requester Notifications: ${requesterNotifications.size > SAFETY_LIMIT ? 'Suppressed' : 'Sent'};`;
         await logSystemEvent('Daily_Check', 'SUCCESS', summaryMsg);
         return { success: true, processed: results.length, details: results };
     } catch (error) {

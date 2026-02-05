@@ -4,6 +4,7 @@ import { fetchContractsFromSheet } from '@/lib/google-sheets';
 import ContractsTable, { EnrichedContract } from '@/components/ContractsTable';
 import FilterBar from '@/components/FilterBar';
 import ManualScanButton from '@/components/ManualScanButton';
+import { parseSheetDate } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,16 +21,20 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
 
   // Process data on server to ensure consistency
   const enrichedContracts: EnrichedContract[] = contracts.map(contract => {
+
+
+    // ...
+
     // 1. Calculate Deadline
     let deadline: Date | null = null;
-    const reqDate = new Date(contract.requestDate);
+    const reqDate = parseSheetDate(contract.requestDate);
 
-    if (isValid(reqDate)) {
+    if (reqDate) {
       const daysToAdd = contract.priority === 'URGENT' ? 3 : 5;
       deadline = addBusinessDays(reqDate, daysToAdd);
     } else if (contract.estimatedReplyDate) {
-      const est = new Date(contract.estimatedReplyDate);
-      if (isValid(est)) deadline = est;
+      const est = parseSheetDate(contract.estimatedReplyDate);
+      if (est) deadline = est;
     }
 
     // 2. Calculate Overdue Status
@@ -38,14 +43,18 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
     const isLegalPending = contract.status === 'SUBMITTED' || contract.status === 'IN_REVIEW';
 
     // Legacy Filter logic embedded in map for efficiency... 
-    // Actually cleaner to do it in the filtering step, 
-    // but the `isLegacy` flag is useful for the individual contract object if we ever want to show it.
     const contractNumStr = contract.contractNumber.replace(/\D/g, '');
     const contractNumVal = parseInt(contractNumStr, 10);
     const legacyCutoff = 250056;
-    const isLegacy = !isNaN(contractNumVal) && contractNumVal < legacyCutoff;
 
-    if (!isLegacy && isLegalPending && deadline) {
+    // CRITICAL FIX: Treat NaN (no numbers) as Legacy/Invalid so they are excluded from active stats
+    const isLegacy = isNaN(contractNumVal) || contractNumVal < legacyCutoff;
+
+    // 2. Calculate Overdue Status
+    // FIX (Synced with Notification Logic): If Legal has already replied (lastReplyDate exists),
+    // it is NO LONGER considered "Review Overdue", regardless of the deadline.
+    // It moves to "Post-Review" tracking instead.
+    if (!isLegacy && isLegalPending && deadline && !contract.lastReplyDate) {
       overdueDays = differenceInCalendarDays(today, deadline);
       if (contract.priority === 'URGENT' && overdueDays > 1) isOverdue = true;
       if (contract.priority === 'NORMAL' && overdueDays > 3) isOverdue = true;
@@ -57,8 +66,8 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
 
     // Only check post-review if not closed and legacy check passes
     if (!isLegacy && contract.status !== 'CLOSED' && contract.lastReplyDate) {
-      const replyDate = new Date(contract.lastReplyDate);
-      if (isValid(replyDate)) {
+      const replyDate = parseSheetDate(contract.lastReplyDate);
+      if (replyDate) {
         postReviewDays = differenceInCalendarDays(today, replyDate);
         if (postReviewDays > 14) isPostReviewOverdue = true;
       }
@@ -88,7 +97,7 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
     // 2. Legacy Check
     const contractNumStr = c.contractNumber.replace(/\D/g, '');
     const contractNumVal = parseInt(contractNumStr, 10);
-    const isLegacy = !isNaN(contractNumVal) && contractNumVal < 250056;
+    const isLegacy = isNaN(contractNumVal) || contractNumVal < 250056;
     if (isLegacy && !showAll) return false;
 
     // 3. Search Query (Keyword)
@@ -114,7 +123,8 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
     if (!c.requestDate || c.requestDate.trim() === '') return false;
     const contractNumStr = c.contractNumber.replace(/\D/g, '');
     const contractNumVal = parseInt(contractNumStr, 10);
-    return !isNaN(contractNumVal) && contractNumVal < 250056;
+    // Treat NaN as Legecy/Invalid
+    return isNaN(contractNumVal) || contractNumVal < 250056;
   }).length;
 
   // Calculate Stats based on DISPLAYED contracts
