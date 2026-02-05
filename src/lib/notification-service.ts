@@ -107,84 +107,32 @@ export async function checkAndSendOverdueNotifications() {
 
         // --- SAFETY MECHANISM ---
 
+        // --- SAFETY MECHANISM ---
+
         // 1. Send Daily Digest to Admin (Always send if items exist)
         if (pendingDigestItems.length > 0) {
+            // [MODIFIED] User requested to STOP daily emails. Only keeping Weekly Report.
+            // We just log the findings for system monitoring.
+            console.log(`[Daily Check] Found ${pendingDigestItems.length} overdue items. Email notification is DISABLED.`);
+
+            /* DISABLED
             const isDev = process.env.NODE_ENV === 'development';
             const envTag = isDev ? '【測試站】' : '【正式站】';
-            const subject = `${envTag} [每日監控彙報] 系統共發現 ${pendingDigestItems.length} 筆異常案件`;
-
-            const rows = pendingDigestItems.map(item => `
-                <tr>
-                    <td style="border:1px solid #ddd;padding:8px">${item.type}</td>
-                    <td style="border:1px solid #ddd;padding:8px">${item.contract.contractNumber}</td>
-                    <td style="border:1px solid #ddd;padding:8px">${item.contract.documentName}</td>
-                    <td style="border:1px solid #ddd;padding:8px">${item.contract.requester} (${item.recipient || '無信箱'})</td>
-                    <td style="border:1px solid #ddd;padding:8px;color:red;font-weight:bold">${item.days} 天</td>
-                </tr>
-            `).join('');
-
-            const circuitBreakerTriggered = requesterNotifications.size > 20;
-            const alertHtml = circuitBreakerTriggered
-                ? `<div style="background:#fee;border:1px solid red;padding:10px;margin-bottom:15px;color:red;font-weight:bold">
-                    ⚠️ 安全閥啟動 (Circuit Breaker Triggered) <br/>
-                    今日預計發送 ${requesterNotifications.size} 封通知給申請人，已超過安全上限 (20)。<br/>
-                    系統已自動攔截所有給申請人的通知信，請管理員檢查是否為誤判。
-                   </div>`
-                : '';
-
-            const html = `
-                <div style="font-family: sans-serif; padding: 20px;">
-                    ${alertHtml}
-                    <h2>系統監控彙報</h2>
-                    <p>以下為今日掃描發現之逾期或異常案件總表：</p>
-                    <table style="border-collapse: collapse; width: 100%;">
-                        <thead>
-                            <tr style="background:#f5f5f5">
-                                <th style="border:1px solid #ddd;padding:8px;text-align:left">類型</th>
-                                <th style="border:1px solid #ddd;padding:8px;text-align:left">單號</th>
-                                <th style="border:1px solid #ddd;padding:8px;text-align:left">文件</th>
-                                <th style="border:1px solid #ddd;padding:8px;text-align:left">負責人</th>
-                                <th style="border:1px solid #ddd;padding:8px;text-align:left">逾期天數/滯留</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>
-            `;
-
-            // Send Digest
+            // ... (HTML construction) ...
             await sendNotificationEmail(adminRecipients.join(','), subject, html);
+            */
         }
 
         // 2. Circuit Breaker for Requesters
-        // Limit: 20 distinct recipients
+        /* DISABLED individual notifications as per user request
         const SAFETY_LIMIT = 20;
 
         if (requesterNotifications.size > SAFETY_LIMIT) {
-            const warningMsg = `Circuit Breaker Triggered! Attempted to notify ${requesterNotifications.size} users. Suppressed.`;
-            console.warn(warningMsg);
-            await logSystemEvent('Safety_Valve', 'WARNING', warningMsg);
-            // DO NOT SEND individual emails
+             // ...
         } else {
-            // Send individual emails
-            for (const [email, items] of requesterNotifications) {
-                // Generate email content for this specific user
-                // Reuse simplified version of previous template logic, potentially combining items if user has multiple
-                const subject = `[案件通知] 您有 ${items.length} 筆合約案件需要關注`;
-                const itemRows = items.map(i => `<li>[${i.type}] <strong>${i.contract.contractNumber} ${i.contract.documentName}</strong> (已逾期 ${i.days} 天)</li>`).join('');
-
-                const html = `
-                    <div style="font-family: sans-serif; padding: 20px;">
-                        <h2 style="color: #d32f2f;">合約案件進度通知</h2>
-                        <p>系統偵測到您有以下案件進度落後或逾期：</p>
-                        <ul>${itemRows}</ul>
-                        <p style="margin-top: 20px; color: gray; font-size: 12px;">此為系統自動發送。</p>
-                    </div>
-                `;
-
-                await sendNotificationEmail(email, subject, html);
-            }
+            // ...
         }
+        */
 
         const summaryMsg = `Processed ${contracts.length} contracts. Found ${results.length} issues. Digest Sent. Requester Notifications: ${requesterNotifications.size > SAFETY_LIMIT ? 'Suppressed' : 'Sent'};`;
         await logSystemEvent('Daily_Check', 'SUCCESS', summaryMsg);
