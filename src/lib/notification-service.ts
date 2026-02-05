@@ -115,71 +115,53 @@ export async function checkAndSendOverdueNotifications() {
             // We just log the findings for system monitoring.
             console.log(`[Daily Check] Found ${pendingDigestItems.length} overdue items. Email notification is DISABLED.`);
 
-            /* DISABLED
-            const isDev = process.env.NODE_ENV === 'development';
-            const envTag = isDev ? '【測試站】' : '【正式站】';
-            // ... (HTML construction) ...
-            await sendNotificationEmail(adminRecipients.join(','), subject, html);
-            */
+
+            const summaryMsg = `Processed ${contracts.length} contracts. Found ${results.length} issues. Daily Emails DISABLED.`;
+            await logSystemEvent('Daily_Check', 'SUCCESS', summaryMsg);
+            return { success: true, processed: results.length, details: results };
+        } catch (error) {
+            console.error('Check failed:', error);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            await logSystemEvent('Daily_Check', 'ERROR', errMsg);
+            return { success: false, error };
         }
-
-        // 2. Circuit Breaker for Requesters
-        /* DISABLED individual notifications as per user request
-        const SAFETY_LIMIT = 20;
-
-        if (requesterNotifications.size > SAFETY_LIMIT) {
-             // ...
-        } else {
-            // ...
-        }
-        */
-
-        const summaryMsg = `Processed ${contracts.length} contracts. Found ${results.length} issues. Daily Emails DISABLED.`;
-        await logSystemEvent('Daily_Check', 'SUCCESS', summaryMsg);
-        return { success: true, processed: results.length, details: results };
-    } catch (error) {
-        console.error('Check failed:', error);
-        const errMsg = error instanceof Error ? error.message : String(error);
-        await logSystemEvent('Daily_Check', 'ERROR', errMsg);
-        return { success: false, error };
     }
-}
 
 export async function sendCeoUnclosedSummary(targetEmail?: string) {
-    try {
-        await logSystemEvent('Weekly_Report', 'INFO', 'Preparing weekly CEO summary...');
-        const contracts = await fetchContractsFromSheet();
-        const ceoEmail = targetEmail || process.env.CEO_EMAIL || 'ceo@example.com';
+        try {
+            await logSystemEvent('Weekly_Report', 'INFO', 'Preparing weekly CEO summary...');
+            const contracts = await fetchContractsFromSheet();
+            const ceoEmail = targetEmail || process.env.CEO_EMAIL || 'ceo@example.com';
 
-        // Include additional recipients from ENV
-        const envRecipients = process.env.NOTIFICATION_RECIPIENTS
-            ? process.env.NOTIFICATION_RECIPIENTS.split(',').map(e => e.trim())
-            : [];
+            // Include additional recipients from ENV
+            const envRecipients = process.env.NOTIFICATION_RECIPIENTS
+                ? process.env.NOTIFICATION_RECIPIENTS.split(',').map(e => e.trim())
+                : [];
 
-        // Combine CEO + Additional Recipients (Unique)
-        const allRecipients = Array.from(new Set([ceoEmail, ...envRecipients]));
+            // Combine CEO + Additional Recipients (Unique)
+            const allRecipients = Array.from(new Set([ceoEmail, ...envRecipients]));
 
-        // Filter: Department contains "執行長" AND Status is not CLOSED
-        const ceoContracts = contracts.filter(c => {
-            if (c.status === 'CLOSED') return false;
-            if (!c.requestDate || c.requestDate.trim() === '') return false; // Ignore placeholders
+            // Filter: Department contains "執行長" AND Status is not CLOSED
+            const ceoContracts = contracts.filter(c => {
+                if (c.status === 'CLOSED') return false;
+                if (!c.requestDate || c.requestDate.trim() === '') return false; // Ignore placeholders
 
-            // Legacy Filter: Skip logic for old contracts (Before W250056)
-            const contractNumStr = c.contractNumber.replace(/\D/g, '');
-            const contractNumVal = parseInt(contractNumStr, 10);
-            if (!isNaN(contractNumVal) && contractNumVal < 250056) return false;
-            // Check department (fuzzy match)
-            if (c.department && c.department.includes('執行長')) return true;
-            return false;
-        });
+                // Legacy Filter: Skip logic for old contracts (Before W250056)
+                const contractNumStr = c.contractNumber.replace(/\D/g, '');
+                const contractNumVal = parseInt(contractNumStr, 10);
+                if (!isNaN(contractNumVal) && contractNumVal < 250056) return false;
+                // Check department (fuzzy match)
+                if (c.department && c.department.includes('執行長')) return true;
+                return false;
+            });
 
-        if (ceoContracts.length === 0) {
-            return { success: true, message: 'No unclosed contracts for CEO office.' };
-        }
+            if (ceoContracts.length === 0) {
+                return { success: true, message: 'No unclosed contracts for CEO office.' };
+            }
 
-        const subject = `[每日彙整] 執行長室未結案法務文件報告 (${ceoContracts.length}件)`;
+            const subject = `[每日彙整] 執行長室未結案法務文件報告 (${ceoContracts.length}件)`;
 
-        const rows = ceoContracts.map(c => `
+            const rows = ceoContracts.map(c => `
             <tr>
                 <td style="padding: 8px; border: 1px solid #ddd;">${c.contractNumber}</td>
                 <td style="padding: 8px; border: 1px solid #ddd;">${c.documentName}</td>
@@ -189,7 +171,7 @@ export async function sendCeoUnclosedSummary(targetEmail?: string) {
             </tr>
         `).join('');
 
-        const html = `
+            const html = `
             <div style="font-family: sans-serif; padding: 20px;">
                 <h2 style="color: #2e7d32;">執行長室法務案件進度匯報</h2>
                 <p>以下為截至目前為止，歸屬於「執行長室」且尚未結案之文件清單：</p>
@@ -211,14 +193,14 @@ export async function sendCeoUnclosedSummary(targetEmail?: string) {
             </div>
         `;
 
-        await sendNotificationEmail(allRecipients.join(','), subject, html);
-        await logSystemEvent('Weekly_Report', 'SUCCESS', `Sent summary for ${ceoContracts.length} items to ${allRecipients.join(', ')}`);
-        return { success: true, count: ceoContracts.length };
+            await sendNotificationEmail(allRecipients.join(','), subject, html);
+            await logSystemEvent('Weekly_Report', 'SUCCESS', `Sent summary for ${ceoContracts.length} items to ${allRecipients.join(', ')}`);
+            return { success: true, count: ceoContracts.length };
 
-    } catch (error) {
-        console.error('CEO Summary failed:', error);
-        const errMsg = error instanceof Error ? error.message : String(error);
-        await logSystemEvent('Weekly_Report', 'ERROR', errMsg);
-        return { success: false, error };
+        } catch (error) {
+            console.error('CEO Summary failed:', error);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            await logSystemEvent('Weekly_Report', 'ERROR', errMsg);
+            return { success: false, error };
+        }
     }
-}
