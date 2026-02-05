@@ -54,7 +54,7 @@ export async function analyzeContractWithAI(text: string, rules: AIRule[], apiKe
     if (rules.length === 0) return [];
 
     try {
-        const genAI = new GoogleGenerativeAI(apiKey);
+        const genAI = new GoogleGenerativeAI(effectiveKey);
         const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
         // Construct Prompt

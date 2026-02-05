@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
 
 // Extract Sheet ID from the CSV URL or use a dedicated ENV
-const SPREADSHEET_ID = '1S8CG7PyILAGK57Y7zNzwf4B9_XX4kGmzeBH84bUjhwE';
+const SPREADSHEET_ID = process.env.LOGGER_SPREADSHEET_ID || '1S8CG7PyILAGK57Y7zNzwf4B9_XX4kGmzeBH84bUjhwE';
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
 function getAuth() {
