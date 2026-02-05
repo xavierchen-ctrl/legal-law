@@ -95,7 +95,9 @@ export async function getProcessedFileIds(): Promise<Set<string>> {
     try {
         const sheets = await getSheetsClient();
         const spreadsheetId = getSpreadsheetId();
-        if (!spreadsheetId) return new Set();
+        if (!spreadsheetId) {
+            throw new Error("Spreadsheet ID not found or configured.");
+        }
 
         // Assuming stored in "Scan_History!A:A" (File ID)
         const response = await sheets.spreadsheets.values.get({
@@ -103,31 +105,109 @@ export async function getProcessedFileIds(): Promise<Set<string>> {
             range: 'Scan_History!A2:A',
         });
 
+        // CRITICAL FIX: If we get a response but 'values' is undefined, it might mean the sheet is empty OR an error occurred silently.
+        // However, if the API call itself threw an error, we catch it below.
+        // The main risk is catching an error and returning new Set(), which wipes history memory.
+
         const rows = response.data.values || [];
         const ids = new Set<string>();
         rows.forEach(r => { if (r[0]) ids.add(r[0]); });
         return ids;
 
     } catch (error) {
-        console.warn('Error reading history:', error);
-        return new Set();
+        console.error('CRITICAL: Failed to read scan history:', error);
+        // Do NOT return empty set. Throw error to stop the scan.
+        throw new Error(`Failed to retrieve processed file IDs: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
-export async function logScanResult(fileId: string, fileName: string, matches: string[]) {
+export interface ScanHistoryItem {
+    fileId: string;
+    fileName: string;
+    scannedAt: string;
+    matches: string;
+    link: string;
+    status: 'Unreviewed' | 'In Review' | 'Reviewed';
+}
+
+export async function getScanResults(): Promise<ScanHistoryItem[]> {
+    try {
+        const sheets = await getSheetsClient();
+        const spreadsheetId = getSpreadsheetId();
+        if (!spreadsheetId) return [];
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: 'Scan_History!A2:F', // Extend range to F for Link & Status
+        });
+
+        const rows = response.data.values || [];
+        return rows.map(row => ({
+            fileId: row[0] || '',
+            fileName: row[1] || '',
+            scannedAt: row[2] || '',
+            matches: row[3] || '',
+            link: row[4] || '',
+            status: (row[5] as any) || 'Unreviewed'
+        })).filter(r => r.fileId !== '');
+
+    } catch (error) {
+        console.warn('Error reading history:', error);
+        return [];
+    }
+}
+
+export async function logScanResult(fileId: string, fileName: string, matches: string[], link: string = '') {
     const sheets = await getSheetsClient();
     const spreadsheetId = getSpreadsheetId();
     if (!spreadsheetId) return;
 
     const timestamp = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
     const matchesStr = matches.length > 0 ? matches.join(', ') : 'None';
+    const status = 'Unreviewed';
 
     await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: 'Scan_History!A:D',
+        range: 'Scan_History!A:F',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
-            values: [[fileId, fileName, timestamp, matchesStr]]
+            values: [[fileId, fileName, timestamp, matchesStr, link, status]]
+        }
+    });
+}
+
+export async function updateScanStatus(fileId: string, newStatus: string) {
+    const sheets = await getSheetsClient();
+    const spreadsheetId = getSpreadsheetId();
+    if (!spreadsheetId) return;
+
+    // 1. Find the row index for this fileId
+    // This is inefficient (O(N) read), but fine for <10k rows. 
+    // In a real DB we'd use SQL. Here we scan column A.
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: 'Scan_History!A:A',
+    });
+
+    const rows = response.data.values || [];
+    const rowIndex = rows.findIndex(r => r[0] === fileId);
+
+    if (rowIndex === -1) {
+        console.warn(`File ID ${fileId} not found in history.`);
+        return;
+    }
+
+    // Row index is 0-based in array, but 1-based in Sheet.
+    // Also A is used. Status is Column F (6th column).
+    // Sheet Row = rowIndex + 1.
+    const range = `Scan_History!F${rowIndex + 1}`;
+
+    await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+            values: [[newStatus]]
         }
     });
 }

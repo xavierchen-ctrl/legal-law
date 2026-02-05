@@ -26,12 +26,10 @@ export default async function KeywordAdminPage() {
     }
 
     return (
-        <div className="p-8 max-w-4xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">關鍵字監控設定 (Keyword Monitor)</h1>
-                <Link href="/admin/logs" className="text-blue-600 hover:underline">
-                    查看系統日誌 &rarr;
-                </Link>
+        <div className="bg-white rounded-lg shadow-md mb-8">
+            <div className="p-6 border-b border-gray-200">
+                <h1 className="text-2xl font-bold text-gray-800">關鍵字監控設定</h1>
+                <p className="text-sm text-gray-500 mt-1">設定合約掃描的關鍵字與通知對象。</p>
             </div>
 
             <div className="bg-white p-6 rounded-lg shadow-md mb-8">
@@ -78,7 +76,7 @@ export default async function KeywordAdminPage() {
                 </ul>
             </div>
 
-            <div className="mt-6 text-sm text-gray-500">
+            <div className="mt-6 text-sm text-gray-500 p-6">
                 <p>💡 說明：系統每天 (上午 08:00) 會掃描一次 Google Drive 指定資料夾的新增檔案。若內容包含上述關鍵字，將發信通知指定人員。</p>
                 <p>🗑️ 刪除規則：目前請直接前往 <a href={process.env.SHEET_CSV_URL?.replace('/pub?gid=0&single=true&output=csv', '')} target="_blank" className="text-blue-600 underline">Google Sheets (Keyword_Rules 分頁)</a> 刪除整行。</p>
             </div>

@@ -2,6 +2,7 @@ import { sendNotificationEmail } from '@/lib/email';
 import { differenceInCalendarDays, addBusinessDays, isValid } from 'date-fns';
 import { fetchContractsFromSheet } from '@/lib/google-sheets';
 import { logSystemEvent } from './logger';
+import { parseSheetDate } from '@/lib/date-utils';
 
 export async function checkAndSendOverdueNotifications() {
     const results = [];
@@ -29,21 +30,24 @@ export async function checkAndSendOverdueNotifications() {
             // Legacy Filter: Skip logic for old contracts (Before W250056)
             const contractNumStr = contract.contractNumber.replace(/\D/g, '');
             const contractNumVal = parseInt(contractNumStr, 10);
-            if (!isNaN(contractNumVal) && contractNumVal < 250056) continue;
+
+            // Fix: If NaN (no numbers in ID), assuming it's an old/malformed entry and SKIP it to be safe.
+            // Or if < 250056 (Year 25 #56).
+            if (isNaN(contractNumVal) || contractNumVal < 250056) continue;
 
             const today = new Date();
 
             // --- 1. Legal Review Overdue Check ---
             // Logic: Deadline = RequestDate + (URGENT? 3 : 5) business days
             let deadline = null;
-            const reqDate = new Date(contract.requestDate);
+            const reqDate = parseSheetDate(contract.requestDate);
 
-            if (isValid(reqDate)) {
+            if (reqDate) {
                 const daysToAdd = contract.priority === 'URGENT' ? 3 : 5;
                 deadline = addBusinessDays(reqDate, daysToAdd);
             } else if (contract.estimatedReplyDate) {
-                const est = new Date(contract.estimatedReplyDate);
-                if (isValid(est)) deadline = est;
+                const est = parseSheetDate(contract.estimatedReplyDate);
+                if (est) deadline = est;
             }
 
             if (deadline) {
@@ -86,8 +90,8 @@ export async function checkAndSendOverdueNotifications() {
             // --- 2. Post-Review Overdue Check ---
             // Logic: Reviewed (lastReplyDate exists) but NOT Closed for > 14 days
             if (contract.lastReplyDate && contract.status !== 'CLOSED') {
-                const replyDate = new Date(contract.lastReplyDate);
-                if (isValid(replyDate)) {
+                const replyDate = parseSheetDate(contract.lastReplyDate);
+                if (replyDate) {
                     const postReviewDays = differenceInCalendarDays(today, replyDate);
                     if (postReviewDays > 14) {
                         const recipients = [...baseRecipients];

@@ -25,23 +25,41 @@ async function getDriveClient() {
     return google.drive({ version: 'v3', auth: client });
 }
 
-export async function listFiles(folderId: string): Promise<DriveFile[]> {
+// Helper to list immediate children (files or folders)
+async function listChildren(folderId: string, mimeTypeFilter?: string): Promise<DriveFile[]> {
     const drive = await getDriveClient();
+    let query = `'${folderId}' in parents and trashed = false`;
+    if (mimeTypeFilter) {
+        query += ` and ${mimeTypeFilter}`;
+    }
 
-    // Query: Inside folder, Not Trashed, Is PDF or Docx (Optional, currently PDF favored)
-    // Adjust mimeType as needed: application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document
-    const query = `'${folderId}' in parents and trashed = false and (mimeType = 'application/pdf')`;
-
+    // Handle large folders with pagination if needed, but keeping simple for now
     const res = await drive.files.list({
         q: query,
         fields: 'files(id, name, mimeType, createdTime, webViewLink)',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
-        orderBy: 'createdTime desc', // Process newest first
-        pageSize: 20 // Batch size
+        corpora: 'allDrives',
+        orderBy: 'createdTime desc',
+        pageSize: 100 // Check more files per request
     });
 
     return (res.data.files as DriveFile[]) || [];
+}
+
+export async function listFiles(folderId: string): Promise<DriveFile[]> {
+    // 1. Get all PDF files in current folder
+    const files = await listChildren(folderId, "(mimeType = 'application/pdf')");
+
+    // 2. Get all subfolders
+    const subfolders = await listChildren(folderId, "(mimeType = 'application/vnd.google-apps.folder')");
+
+    // 3. Recursively scan subfolders
+    const subfolderPromises = subfolders.map(folder => listFiles(folder.id));
+    const nestedFiles = await Promise.all(subfolderPromises);
+
+    // 4. Flatten and return
+    return [...files, ...nestedFiles.flat()];
 }
 
 export async function downloadFile(fileId: string): Promise<Buffer> {

@@ -4,18 +4,42 @@ import { sendNotificationEmail } from './lib/email';
 
 async function sendTest() {
     const target = 'caesarliu@wavenet.com.tw'; // Default testing email
-    const subject = '[測試信] Legal Alert: 發現關鍵字 (測試檔案)';
+    const subject = '[每日掃描彙報] 發現 2 個關注檔案 (測試)';
+
+    // Simulate multiple items
+    const items = [
+        {
+            fileName: '2025_Q1_機密報價單.pdf',
+            link: 'https://drive.google.com/file/d/test-id-1/view',
+            keywords: ['機密', '報價']
+        },
+        {
+            fileName: '人事資遣名單_草稿.docx',
+            link: 'https://drive.google.com/file/d/test-id-2/view',
+            keywords: ['資遣', '薪資']
+        }
+    ];
+
+    const rows = items.map(item => `
+        <div style="margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
+            <p style="margin: 5px 0;"><strong>檔案：</strong> ${item.fileName}</p>
+            <p style="margin: 5px 0;"><strong>關鍵字：</strong> <span style="color: #d32f2f;">${item.keywords.join(', ')}</span></p>
+            <p style="margin: 5px 0;">
+                <a href="${item.link}" target="_blank" style="color: #1a73e8; text-decoration: none;">開啟檔案 &rarr;</a>
+            </p>
+        </div>
+    `).join('');
+
     const body = `
         <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ddd; max-width: 600px;">
-            <h3 style="color: #d32f2f;">🚨 文件掃描通知 (測試)</h3>
-            <p>系統在檔案 <strong>2025_Q1_機密報價單.pdf</strong> 中偵測到您設定的關鍵字：</p>
-            <ul style="background-color: #f9f9f9; padding: 15px 30px; border-radius: 5px;">
-                <li style="margin-bottom: 5px; font-weight: bold; color: #d32f2f;">機密</li>
-                <li style="font-weight: bold; color: #d32f2f;">報價</li>
-            </ul>
-            <p>請前往 <a href="https://drive.google.com/file/d/test-file-id/view" target="_blank" style="color: #1a73e8; text-decoration: none;">Google Drive</a> 確認檔案內容。</p>
-            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;" />
-            <p style="font-size: 12px; color: #888;">此為系統測試信件，請忽略。</p>
+            <h3 style="color: #2c3e50;">文件掃描每日彙報 (測試)</h3>
+            <p>系統在今日掃描中，為您發現了以下 ${items.length} 個包含關注關鍵字的檔案：</p>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; border: 1px solid #ddd;">
+                ${rows}
+            </div>
+            <p style="font-size: 12px; color: gray; margin-top: 20px;">
+                此為每日自動掃描報告 (${new Date().toLocaleDateString()}) - 系統測試信
+            </p>
         </div>
     `;
 

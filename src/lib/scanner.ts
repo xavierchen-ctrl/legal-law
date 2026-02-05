@@ -1,139 +1,183 @@
 import { listFiles, downloadFile } from './drive-service';
 import { getKeywords, getProcessedFileIds, logScanResult, KeywordRule } from './keyword-service';
+import { getAIRules } from './ai-rule-service';
+import { analyzeContractWithAI, AIAnalysisResult } from './ai-service';
 import { sendNotificationEmail } from './email';
 import { logSystemEvent } from './logger';
+// @ts-ignore
+import { PDFParse } from 'pdf-parse';
 
-export async function scanAndNotify() {
+interface NotificationItem {
+    fileName: string;
+    link: string;
+    keywords: string[];
+    aiFindings: { rule: string, reason: string, risk: string }[];
+}
+
+export async function scanAndNotify(options: { limit?: number; apiKey?: string } = {}) {
+    const { limit, apiKey } = options;
     const folderId = process.env.TARGET_FOLDER_ID;
     if (!folderId) {
         throw new Error('TARGET_FOLDER_ID not set');
     }
 
-    // 1. Prepare Data
-    const [processedIds, rules] = await Promise.all([
-        getProcessedFileIds(),
-        getKeywords()
-    ]);
+    await logSystemEvent('Scanner', 'INFO', 'Starting drive scan...');
 
-    const activeRules = rules.filter(r => r.isActive);
-    if (activeRules.length === 0) {
-        console.log('No active keyword rules.');
-        return { message: 'No active rules' };
-    }
+    try {
+        // 1. Prepare Data
+        const [processedIds, rules, aiRules] = await Promise.all([
+            getProcessedFileIds(),
+            getKeywords(),
+            getAIRules().catch(e => [])
+        ]);
 
-    // 2. Fetch Files
-    const files = await listFiles(folderId);
-    console.log(`Found ${files.length} files in folder.`);
+        const activeKeywords = rules.filter(r => r.isActive);
+        const activeAIRules = aiRules.filter(r => r.isActive);
 
-    let processedCount = 0;
-    let matchCount = 0;
-
-    // Map<Email, List of Matched Items>
-    const pendingNotifications = new Map<string, Array<{ fileName: string, link?: string, keywords: string[] }>>();
-
-    // 3. Process Each File
-    for (const file of files) {
-        // Skip if already scanned
-        if (processedIds.has(file.id)) {
-            continue;
+        if (activeKeywords.length === 0 && activeAIRules.length === 0) {
+            console.log('No active keywords or AI rules defined.');
+            return { success: true, message: 'No active rules' };
         }
 
-        console.log(`Scanning new file: ${file.name} (${file.id})`);
+        // 2. List Files from Drive
+        // Use the folderId from env, NOT the limit number.
+        const allFiles = await listFiles(folderId);
+        const files = options.limit ? allFiles.slice(0, options.limit) : allFiles;
 
-        try {
-            // Download & Extract Text
-            const buffer = await downloadFile(file.id);
-            // Dynamic import to avoid build-time bundling issues with canvas/dom
-            // @ts-ignore
-            const pdf = (await import('pdf-parse')).default; // or use require('pdf-parse') if ESM fails
-            const data = await pdf(buffer);
-            const content = data.text; // The raw text content
+        console.log(`Found ${allFiles.length} files in Drive folder. Processing ${files.length}.`);
 
-            // Check against rules
-            const foundMatches: string[] = [];
-            const emailsToSend = new Set<string>();
+        const newFiles = files.filter(f => !processedIds.has(f.id));
+        console.log(`Found ${newFiles.length} new files to process.`);
 
-            for (const rule of activeRules) {
-                if (content.includes(rule.keyword)) {
-                    foundMatches.push(rule.keyword);
-                    if (rule.targetEmail) {
-                        // Support comma separated emails in rule
-                        rule.targetEmail.split(',').forEach(e => emailsToSend.add(e.trim()));
+        if (newFiles.length === 0) {
+            return { success: true, message: 'No new files found.' };
+        }
+
+        // 3. Process Each File
+        const pendingNotifications = new Map<string, NotificationItem[]>();
+        let processedCount = 0;
+        let matchCount = 0;
+        const errors: string[] = [];
+
+        for (const file of newFiles) {
+            console.log(`Processing file: ${file.name} (${file.id})...`);
+
+            try {
+                // Download & Extract Text
+                const buffer = await downloadFile(file.id);
+                // @ts-ignore
+                const parser = new PDFParse({ data: buffer });
+                const data = await parser.getText();
+                const content = data.text;
+
+                // --- A. Check Keywords ---
+                const foundMatches: string[] = [];
+                const emailsToSend = new Set<string>();
+
+                for (const rule of activeKeywords) {
+                    if (content.includes(rule.keyword)) {
+                        foundMatches.push(rule.keyword);
+                        if (rule.targetEmail) {
+                            rule.targetEmail.split(',').forEach(e => emailsToSend.add(e.trim()));
+                        }
                     }
                 }
-            }
 
-            // Collect for Batch Notification (Do not send immediately)
-            if (foundMatches.length > 0) {
-                matchCount++;
-                const item = {
-                    fileName: file.name,
-                    link: file.webViewLink,
-                    keywords: foundMatches
-                };
+                // --- B. Check AI Rules ---
+                const aiFindings: { rule: string, reason: string, risk: string }[] = [];
+                if (activeAIRules.length > 0) {
+                    console.log(`Running AI Analysis for ${file.name}...`);
+                    // Pass apiKey to AI Service!
+                    const analysisResults = await analyzeContractWithAI(content, activeAIRules, apiKey);
 
-                emailsToSend.forEach(email => {
-                    if (!pendingNotifications.has(email)) {
-                        pendingNotifications.set(email, []);
+                    for (const result of analysisResults) {
+                        if (result.violationFound) {
+                            const ruleConfig = activeAIRules[result.ruleId];
+                            if (ruleConfig) {
+                                console.log(`⚠️ Violation: [${ruleConfig.ruleName}]`);
+                                aiFindings.push({
+                                    rule: ruleConfig.ruleName,
+                                    reason: result.reasoning,
+                                    risk: 'HIGH'
+                                });
+                                if (ruleConfig.targetEmail) {
+                                    ruleConfig.targetEmail.split(',').forEach(e => emailsToSend.add(e.trim()));
+                                }
+                            }
+                        }
                     }
-                    pendingNotifications.get(email)!.push(item);
-                });
+                }
+
+                // Collect Matches
+                if (foundMatches.length > 0 || aiFindings.length > 0) {
+                    matchCount++;
+                    const item: NotificationItem = {
+                        fileName: file.name,
+                        link: file.webViewLink || '',
+                        keywords: foundMatches,
+                        aiFindings: aiFindings
+                    };
+
+                    emailsToSend.forEach(email => {
+                        if (!pendingNotifications.has(email)) {
+                            pendingNotifications.set(email, []);
+                        }
+                        pendingNotifications.get(email)!.push(item);
+                    });
+                }
+
+                // Log Result
+                const logContent = [...foundMatches, ...aiFindings.map(f => `[AI] ${f.rule}`)].slice(0, 10);
+                await logScanResult(file.id, file.name, logContent, file.webViewLink || '');
+                processedCount++;
+
+            } catch (error: any) {
+                console.error(`Failed to process file ${file.name}:`, error);
+                await logSystemEvent('Scanner_Error', 'ERROR', `Failed ${file.name}: ${error.message}`);
+                errors.push(`${file.name}: ${error.message || error}`);
             }
 
-            // Log to History (Always log to prevent re-scanning, even if no match)
-            await logScanResult(file.id, file.name, foundMatches);
-            processedCount++;
-
-        } catch (error) {
-            console.error(`Failed to process file ${file.name}:`, error);
-            await logSystemEvent('Scanner_Error', 'ERROR', `Failed ${file.name}: ${error}`);
+            // Rate Limit for AI
+            if (activeAIRules.length > 0) {
+                await new Promise(r => setTimeout(r, 20000));
+            }
         }
-    }
 
-    // 4. Send Batch Notifications
-    for (const [email, items] of pendingNotifications) {
-        const subject = `[每日掃描彙報] 發現 ${items.length} 個關注檔案`;
+        // 4. Send Notifications
+        for (const [email, items] of pendingNotifications) {
+            const isDev = process.env.NODE_ENV === 'development';
+            const envTag = isDev ? '【測試站/Local】' : '【正式站/Cloud】';
+            const subject = `${envTag} [每日掃描彙報] 發現 ${items.length} 個關注檔案`;
+            const rows = items.map(item => {
+                let detailsHtml = '';
+                if (item.keywords.length > 0) detailsHtml += `<p><strong>關鍵字：</strong> <span style="color:red">${item.keywords.join(', ')}</span></p>`;
+                if (item.aiFindings.length > 0) {
+                    const aiRows = item.aiFindings.map(f => `<li><span style="background:#ffeba1">${f.rule}</span> ${f.reason}</li>`).join('');
+                    detailsHtml += `<div style="background:#fff3e0;padding:10px;margin-top:10px"><strong>AI 風險：</strong><ul>${aiRows}</ul></div>`;
+                }
+                return `<div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:20px"><p><strong>檔案：</strong> ${item.fileName}</p>${detailsHtml}<a href="${item.link}">開啟檔案</a></div>`;
+            }).join('');
 
-        const rows = items.map(item => `
-            <div style="margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
-                <p style="margin: 5px 0;"><strong>檔案：</strong> ${item.fileName}</p>
-                <p style="margin: 5px 0;"><strong>關鍵字：</strong> <span style="color: #d32f2f;">${item.keywords.join(', ')}</span></p>
-                <p style="margin: 5px 0;">
-                    <a href="${item.link}" target="_blank" style="color: #1a73e8; text-decoration: none;">開啟檔案 &rarr;</a>
-                </p>
-            </div>
-        `).join('');
+            const body = `<h3>文件掃描彙報</h3>${rows}`;
 
-        const body = `
-            <h3>文件掃描每日彙報</h3>
-            <p>系統在今日掃描中，為您發現了以下 ${items.length} 個包含關注關鍵字的檔案：</p>
-            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; border: 1px solid #ddd;">
-                ${rows}
-            </div>
-            <p style="font-size: 12px; color: gray; margin-top: 20px;">
-                此為每日自動掃描報告 (${new Date().toLocaleDateString()})
-            </p>
-        `;
-
-        try {
-            await sendNotificationEmail(email, subject, body);
-            console.log(`Digest email sent to ${email} with ${items.length} items.`);
-        } catch (err) {
-            console.error(`Failed to send digest to ${email}`, err);
+            try {
+                await sendNotificationEmail(email, subject, body);
+            } catch (err) {
+                console.error(`Failed to send digest to ${email}`);
+            }
         }
+
+        let resultMsg = `Scanned ${processedCount} new files, found ${matchCount} matches.`;
+        if (errors.length > 0) {
+            resultMsg += ` Errors: ${errors.length}`;
+        }
+        await logSystemEvent('Drive_Scan', 'SUCCESS', resultMsg);
+
+        return { success: errors.length === 0, message: resultMsg, errors };
+
+    } catch (error: any) {
+        console.error('Scan Fatal Error:', error);
+        await logSystemEvent('Scanner_Fatal', 'ERROR', error.message);
+        throw error;
     }
-
-    // Log to History (Always log to prevent re-scanning, even if no match)
-    await logScanResult(file.id, file.name, foundMatches);
-    processedCount++;
-
-} catch (error) {
-    console.error(`Failed to process file ${file.name}:`, error);
-    await logSystemEvent('Scanner_Error', 'ERROR', `Failed ${file.name}: ${error}`);
-}
-    }
-
-const resultMsg = `Scanned ${processedCount} new files, found ${matchCount} matches.`;
-await logSystemEvent('Drive_Scan', 'SUCCESS', resultMsg);
-return { success: true, message: resultMsg };
 }

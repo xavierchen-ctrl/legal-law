@@ -3,6 +3,7 @@ import { differenceInCalendarDays, addBusinessDays, isValid } from 'date-fns';
 import { fetchContractsFromSheet } from '@/lib/google-sheets';
 import ContractsTable, { EnrichedContract } from '@/components/ContractsTable';
 import FilterBar from '@/components/FilterBar';
+import ManualScanButton from '@/components/ManualScanButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,15 +148,19 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
           <Link href="/api/notification/check-overdue" target="_blank" className="btn" style={{ background: 'var(--secondary)', color: 'var(--secondary-foreground)' }}>
             檢查逾期 (手動觸發)
           </Link>
+          {/* <ManualScanButton /> Hidden for hotfix */}
           <a href="https://docs.google.com/spreadsheets/d/1S8CG7PyILAGK57Y7zNzwf4B9_XX4kGmzeBH84bUjhwE/edit" target="_blank" className="btn btn-primary">
             前往試算表作業
           </a>
           <div className="flex gap-4">
+            <Link href="/reviews" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-blue-600">
+              <span>⚖️</span> 智慧審閱
+            </Link>
             <Link href="/admin/logs" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
               <span>📋</span> 系統日誌
             </Link>
             <Link href="/admin/keywords" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
-              <span>🔍</span> 關鍵字監控
+              <span>🔍</span> 關鍵字/AI 監控
             </Link>
           </div>
         </div>
