@@ -134,7 +134,7 @@ export async function checkAndSendOverdueNotifications() {
         }
         */
 
-        const summaryMsg = `Processed ${contracts.length} contracts. Found ${results.length} issues. Digest Sent. Requester Notifications: ${requesterNotifications.size > SAFETY_LIMIT ? 'Suppressed' : 'Sent'};`;
+        const summaryMsg = `Processed ${contracts.length} contracts. Found ${results.length} issues. Daily Emails DISABLED.`;
         await logSystemEvent('Daily_Check', 'SUCCESS', summaryMsg);
         return { success: true, processed: results.length, details: results };
     } catch (error) {
