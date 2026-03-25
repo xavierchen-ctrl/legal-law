@@ -139,7 +139,7 @@ export async function scanAndNotify(options: { limit?: number; apiKey?: string }
 
             // Rate Limit for AI
             if (activeAIRules.length > 0) {
-                await new Promise(r => setTimeout(r, 20000));
+                await new Promise(r => setTimeout(r, 5000));
             }
         }
 
