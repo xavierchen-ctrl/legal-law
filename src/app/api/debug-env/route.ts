@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchContractsFromSheet } from '@/lib/google-sheets';
+import { google } from 'googleapis';
+import { JWT } from 'google-auth-library';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,11 +14,26 @@ export async function GET() {
         return `✅ ${val.substring(0, 40)}${val.length > 40 ? '...' : ''}`;
     };
 
-    // 直接測試 Google Sheets 連線
+    // 直接測試 Google Sheets API
     let sheetsTest = '';
     try {
-        const contracts = await fetchContractsFromSheet();
-        sheetsTest = `✅ 成功讀取 ${contracts.length} 筆`;
+        const client = new JWT({
+            email: process.env.GOOGLE_CLIENT_EMAIL,
+            key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+            scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+        });
+        const sheets = google.sheets({ version: 'v4', auth: client });
+        const csvUrl = process.env.SHEET_CSV_URL || '';
+        const match = csvUrl.match(/\/d\/(.*?)(\/|$)/);
+        const spreadsheetId = match ? match[1] : null;
+
+        if (!spreadsheetId) {
+            sheetsTest = '❌ 無法從 SHEET_CSV_URL 解析 spreadsheetId';
+        } else {
+            const meta = await sheets.spreadsheets.get({ spreadsheetId });
+            const sheetCount = meta.data.sheets?.length ?? 0;
+            sheetsTest = `✅ 成功連線，共 ${sheetCount} 個分頁`;
+        }
     } catch (err: any) {
         sheetsTest = `❌ 失敗：${err.message}`;
     }
