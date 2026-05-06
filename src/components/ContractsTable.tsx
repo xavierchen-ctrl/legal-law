@@ -99,7 +99,7 @@ export default function ContractsTable({ contracts }: { contracts: EnrichedContr
                                     )}
                                 </td>
                                 <td className="p-4">
-                                    <Link href={`/contracts/${contract.id}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                    <Link href={`/contracts/${encodeURIComponent(contract.id)}`} className="text-sm font-medium text-blue-600 hover:underline">
                                         詳情
                                     </Link>
                                 </td>

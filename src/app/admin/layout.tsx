@@ -35,6 +35,9 @@ export default function AdminLayout({
                     <Link href="/admin/logs" className="py-4 text-sm font-medium text-gray-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500">
                         系統日誌
                     </Link>
+                    <Link href="/admin/notifications" className="py-4 text-sm font-medium text-gray-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500">
+                        人工催辦發信
+                    </Link>
                 </div>
             </div>
 

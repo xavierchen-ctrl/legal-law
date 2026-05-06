@@ -133,6 +133,12 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
   const overdueCount = activeContracts.filter(c => c.isOverdue).length;
   const postReviewOverdueCount = activeContracts.filter(c => c.isPostReviewOverdue).length;
 
+  // Status breakdown stats
+  const inReviewCount = displayedContracts.filter(c => c.status === 'IN_REVIEW').length;
+  const repliedCount = displayedContracts.filter(c => c.status === 'AWAITING_FEEDBACK').length;
+  const pendingStampCount = displayedContracts.filter(c => c.status === 'PENDING_STAMP' || c.stampInProgress).length;
+  const closedCount = displayedContracts.filter(c => c.isArchived).length;
+
   return (
     <main className="container">
       <header className="flex justify-between items-end mb-8">
@@ -182,24 +188,20 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="card glass-panel flex flex-col items-center justify-center p-6">
-          <span className="text-4xl font-bold text-blue-600">{activeContracts.length}</span>
-          <span className="text-gray-500 mt-2">進行中案件</span>
+          <span className="text-4xl font-bold text-blue-600">{inReviewCount}</span>
+          <span className="text-gray-500 mt-2">審閱中</span>
         </div>
         <div className="card glass-panel flex flex-col items-center justify-center p-6">
-          <span className="text-4xl font-bold text-purple-600">{urgentCount}</span>
-          <span className="text-gray-500 mt-2">急件</span>
+          <span className="text-4xl font-bold text-indigo-600">{repliedCount}</span>
+          <span className="text-gray-500 mt-2">已回覆</span>
         </div>
-        <div className={`card glass-panel flex flex-col items-center justify-center p-6 ${overdueCount > 0 ? 'border-red-500 bg-red-50' : ''}`}>
-          <span className={`text-4xl font-bold ${overdueCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {overdueCount}
-          </span>
-          <span className="text-gray-500 mt-2">審閱逾期</span>
+        <div className="card glass-panel flex flex-col items-center justify-center p-6">
+          <span className="text-4xl font-bold text-amber-500">{pendingStampCount}</span>
+          <span className="text-gray-500 mt-2">待用印</span>
         </div>
-        <div className={`card glass-panel flex flex-col items-center justify-center p-6 ${postReviewOverdueCount > 0 ? 'border-orange-500 bg-orange-50' : ''}`}>
-          <span className={`text-4xl font-bold ${postReviewOverdueCount > 0 ? 'text-orange-600' : 'text-gray-600'}`}>
-            {postReviewOverdueCount}
-          </span>
-          <span className="text-gray-500 mt-2">未結案逾期</span>
+        <div className="card glass-panel flex flex-col items-center justify-center p-6">
+          <span className="text-4xl font-bold text-green-600">{closedCount}</span>
+          <span className="text-gray-500 mt-2">已歸檔</span>
         </div>
       </div>
 

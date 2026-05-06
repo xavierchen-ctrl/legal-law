@@ -1,12 +1,12 @@
 export async function register() {
-    // Local scheduler (node-cron) is NOT utilized in Vercel Serverless environment.
-    // We rely on Vercel Cron to hit /api/cron/* endpoints.
-
-    // However, if you want to run scheduler locally for dev, you can uncomment below:
-    /*
-    if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV !== 'production') {
-        const { initScheduler } = await import('./lib/scheduler');
-        initScheduler();
+    // Polyfill browser globals required by pdf-parse in Node.js environment
+    if (typeof (globalThis as any).DOMMatrix === 'undefined') {
+        (globalThis as any).DOMMatrix = class DOMMatrix { constructor() {} };
     }
-    */
+    if (typeof (globalThis as any).ImageData === 'undefined') {
+        (globalThis as any).ImageData = class ImageData { constructor() {} };
+    }
+    if (typeof (globalThis as any).Path2D === 'undefined') {
+        (globalThis as any).Path2D = class Path2D { constructor() {} };
+    }
 }

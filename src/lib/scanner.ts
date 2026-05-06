@@ -4,8 +4,7 @@ import { getAIRules } from './ai-rule-service';
 import { analyzeContractWithAI, AIAnalysisResult } from './ai-service';
 import { sendNotificationEmail } from './email';
 import { logSystemEvent } from './logger';
-// @ts-ignore
-import { PDFParse } from 'pdf-parse';
+import { extractTextFromPdf } from './pdf-helper';
 
 interface NotificationItem {
     fileName: string;
@@ -65,10 +64,7 @@ export async function scanAndNotify(options: { limit?: number; apiKey?: string }
             try {
                 // Download & Extract Text
                 const buffer = await downloadFile(file.id);
-                // @ts-ignore
-                const parser = new PDFParse({ data: buffer });
-                const data = await parser.getText();
-                const content = data.text;
+                const content = await extractTextFromPdf(buffer);
 
                 // --- A. Check Keywords ---
                 const foundMatches: string[] = [];
@@ -139,7 +135,7 @@ export async function scanAndNotify(options: { limit?: number; apiKey?: string }
 
             // Rate Limit for AI
             if (activeAIRules.length > 0) {
-                await new Promise(r => setTimeout(r, 5000));
+                await new Promise(r => setTimeout(r, 15000));
             }
         }
 

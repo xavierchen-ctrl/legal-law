@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { checkAndSendOverdueNotifications, sendCeoUnclosedSummary } from './notification-service';
+import { checkAndSendOverdueNotifications, sendCeoUnclosedSummary, checkAndSendArchiveReminders } from './notification-service';
 
 export function initScheduler() {
     // Avoid double initialization in HMR (Hot Module Replacement) during dev
@@ -10,11 +10,14 @@ export function initScheduler() {
 
     console.log('Initializing Global Scheduler...');
 
-    // 1. General Overdue Check: DAILY at 09:30
+    // 1. General Overdue Check + Archive Reminder: DAILY at 09:30
     cron.schedule('30 09 * * *', async () => {
         console.log('[Scheduler] Running Daily Ops at', new Date().toISOString());
-        const result = await checkAndSendOverdueNotifications();
-        console.log('[Scheduler] Daily Check Complete:', result);
+        const [overdueResult, archiveResult] = await Promise.all([
+            checkAndSendOverdueNotifications(),
+            checkAndSendArchiveReminders(),
+        ]);
+        console.log('[Scheduler] Daily Check Complete:', { overdueResult, archiveResult });
     }, {
         timezone: "Asia/Taipei"
     });

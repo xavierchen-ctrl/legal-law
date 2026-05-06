@@ -55,3 +55,31 @@ enum Status {
   PAUSED            // 暫停中
   CLOSED            // 已結案
 }
+
+// ── 合約進度追蹤（疊加於 Google Sheets 資料之上）──
+model ContractTracking {
+  id                    Int            @id @default(autoincrement())
+  contractNumber        String         @unique  // 對應 Google Sheets 的合約編號
+
+  trackingStatus        TrackingStatus @default(REVIEWING)
+
+  // 各階段時間戳（切換狀態時由系統自動記錄）
+  reviewingAt           DateTime?
+  repliedAt             DateTime?
+  stampRequestedAt      DateTime?
+  archivedAt            DateTime?
+
+  // 歸檔通知名單：JSON 字串 [{name, email}]
+  archiveNotifyEmails   String?
+  lastArchiveReminderAt DateTime?
+
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+}
+
+enum TrackingStatus {
+  REVIEWING     // 審閱中
+  REPLIED       // 已回覆
+  PENDING_STAMP // 待用印
+  ARCHIVED      // 已歸檔
+}

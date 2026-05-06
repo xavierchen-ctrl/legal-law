@@ -1,10 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Use simplified config compatible with Turbopack
+  output: 'standalone',
   serverExternalPackages: ['pdf-parse'],
-
-  // Bypass strict type checking on Vercel (since local build passes)
   typescript: {
     ignoreBuildErrors: true,
   },

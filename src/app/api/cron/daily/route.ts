@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { checkAndSendOverdueNotifications } from '@/lib/notification-service';
+import { checkAndSendOverdueNotifications, checkAndSendArchiveReminders, checkAndSendFollowUpReminders, checkAndSendStampDoneReminders } from '@/lib/notification-service';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
     try {
@@ -9,10 +11,15 @@ export async function GET(request: Request) {
         }
 
         console.log('[Cron] Starting Daily Check...');
-        const result = await checkAndSendOverdueNotifications();
-        console.log('[Cron] Daily Check Complete:', result);
+        const [overdueResult, archiveResult, followUpResult, stampDoneResult] = await Promise.all([
+            checkAndSendOverdueNotifications(),
+            checkAndSendArchiveReminders(),
+            checkAndSendFollowUpReminders(),
+            checkAndSendStampDoneReminders(),
+        ]);
+        console.log('[Cron] Daily Check Complete:', { overdueResult, archiveResult, followUpResult, stampDoneResult });
 
-        return NextResponse.json(result);
+        return NextResponse.json({ overdueResult, archiveResult, followUpResult, stampDoneResult });
     } catch (error) {
         console.error('[Cron] Daily Check Failed:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

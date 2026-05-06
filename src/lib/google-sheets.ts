@@ -8,10 +8,16 @@ export interface SheetContract {
     department: string;
     requester: string;
     requesterEmail?: string;
+    supervisorEmail?: string;
     counterparty: string;
+    businessNo: string;   // 統一編號（8碼），可為空
     documentName: string;
     priority: 'URGENT' | 'NORMAL';
     status: string;
+    isArchived: boolean;       // V欄結案原因有值（獨立於J欄案件狀態）
+    stampCompleted: boolean;   // Y/Z欄用印完成
+    stampInProgress: boolean;  // Y/Z欄有值但未完成（待用印）
+    stampCompletedDate: string | null; // X欄：雙方實際完成用印日期
     estimatedReplyDate: string | null;
     lastReplyDate: string | null;
 }
@@ -55,7 +61,11 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
         // Let's try fetching the spreadsheet detail first to get the first sheet's name.
 
         const meta = await sheets.spreadsheets.get({ spreadsheetId });
-        const sheetName = meta.data.sheets?.[0]?.properties?.title;
+        const TARGET_GID = 1607545574;
+        const targetSheet = meta.data.sheets?.find(
+            s => s.properties?.sheetId === TARGET_GID
+        ) ?? meta.data.sheets?.[0];
+        const sheetName = targetSheet?.properties?.title;
 
         if (!sheetName) throw new Error('No sheets found');
 
@@ -104,13 +114,13 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
             if (!cNum && !docName) return null;
 
             const contractNumber = cNum || `UNKNOWN-${index}`;
-            const priorityCell = getValue(row, '急件');
+            const priorityCell = getValue(row, '急迫性');
             const priority = priorityCell.includes('急件') ? 'URGENT' : 'NORMAL';
 
-            const statusRaw = getValue(row, '狀態選單') || getValue(row, '審閱進度');
+            const statusRaw = getValue(row, '案件狀態') || getValue(row, '狀態選單') || getValue(row, '審閱進度');
             let status = 'SUBMITTED';
 
-            if (statusRaw.includes('已結案') || statusRaw.includes('完成') || statusRaw.includes('結案')) {
+            if (statusRaw.includes('已結案') || statusRaw.includes('結案')) {
                 status = 'CLOSED';
             } else if (statusRaw.includes('暫停')) {
                 status = 'PAUSED';
@@ -119,6 +129,23 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
             } else if (statusRaw.includes('法務審閱中') || statusRaw.includes('審閱中')) {
                 status = 'IN_REVIEW';
             }
+
+            // V 欄結案原因：獨立判斷是否已歸檔（不影響 J 欄的 status）
+            const archiveCell = getValue(row, '結案原因');
+            const isArchived = archiveCell.includes('已取得簽署完成之合約文件') || archiveCell.includes('案件撤回');
+
+            // Y、Z 欄：用印完成判斷
+            // Y欄（紙本）：可為「是」或「無紙本作業，以線上簽署方式為之。」
+            // Z欄（電子檔掃描）：只能為「是」
+            const yVal = getValue(row, '紙本是否').trim();
+            const zVal = getValue(row, '是否已完成').trim();
+            const yDone = yVal === '是' || yVal === '無紙本作業，以線上簽署方式為之。';
+            const zDone = zVal === '是';
+            const stampCompleted = yDone && zDone;
+            // Y 或 Z 有任何非空白/非否的值，視為用印進行中（待用印）
+            const stampInProgress = !stampCompleted && (
+                (yVal !== '' && yVal !== '否') || (zVal !== '' && zVal !== '否')
+            );
 
             // Find Latest Reply Date
             let lastReplyDate = null;
@@ -144,16 +171,37 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
                 }
             }
 
+            // 讀取申請人 Email（欄位名稱含「申請人」且含「mail」或「信箱」）
+            const requesterEmailIdx = headers.findIndex((h: string) =>
+                (h.includes('申請人') && (h.toLowerCase().includes('mail') || h.includes('信箱'))) ||
+                h.includes('申請人email') || h.includes('申請人Email')
+            );
+            const requesterEmail = requesterEmailIdx !== -1 ? (row[requesterEmailIdx] || '').trim() : '';
+
+            // 讀取直屬主管 Email（欄位名稱含「主管」且含「mail」或「信箱」）
+            const supervisorEmailIdx = headers.findIndex((h: string) =>
+                (h.includes('主管') && (h.toLowerCase().includes('mail') || h.includes('信箱'))) ||
+                h.includes('主管email') || h.includes('主管Email')
+            );
+            const supervisorEmail = supervisorEmailIdx !== -1 ? (row[supervisorEmailIdx] || '').trim() : '';
+
             return {
                 id: contractNumber,
                 contractNumber,
                 requestDate: getValue(row, '申請日期'),
                 department: getValue(row, '需求單位'),
                 requester: getValue(row, '申請人'),
+                requesterEmail: requesterEmail || undefined,
+                supervisorEmail: supervisorEmail || undefined,
                 counterparty: getValue(row, '相對人'),
+                businessNo: getValue(row, '統一編號'),
                 documentName: docName,
                 priority,
                 status,
+                isArchived,
+                stampCompleted,
+                stampInProgress,
+                stampCompletedDate: getValue(row, '完成用印日期').trim() || null,
                 estimatedReplyDate: getValue(row, '預計回覆日') || null,
                 lastReplyDate,
             };
