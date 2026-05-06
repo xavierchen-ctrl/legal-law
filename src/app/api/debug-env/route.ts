@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { fetchContractsFromSheet } from '@/lib/google-sheets';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,15 @@ export async function GET() {
         return `✅ ${val.substring(0, 40)}${val.length > 40 ? '...' : ''}`;
     };
 
+    // 直接測試 Google Sheets 連線
+    let sheetsTest = '';
+    try {
+        const contracts = await fetchContractsFromSheet();
+        sheetsTest = `✅ 成功讀取 ${contracts.length} 筆`;
+    } catch (err: any) {
+        sheetsTest = `❌ 失敗：${err.message}`;
+    }
+
     return NextResponse.json({
         GOOGLE_CLIENT_EMAIL: check('GOOGLE_CLIENT_EMAIL'),
         GOOGLE_PRIVATE_KEY: check('GOOGLE_PRIVATE_KEY'),
@@ -22,5 +32,6 @@ export async function GET() {
         SMTP_PASS: check('SMTP_PASS'),
         SYSTEM_PASSWORD: check('SYSTEM_PASSWORD'),
         DATABASE_URL: check('DATABASE_URL'),
+        sheets_connection_test: sheetsTest,
     });
 }
