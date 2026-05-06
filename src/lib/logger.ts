@@ -8,7 +8,7 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 function getAuth() {
     const email = process.env.GOOGLE_CLIENT_EMAIL;
     // Handle private key newlines for Vercel/Env compatibility
-    const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const key = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim();
 
     if (!email || !key) {
         console.error('Missing Google Service Account Credentials');

@@ -19,7 +19,7 @@ export async function GET() {
     try {
         const client = new JWT({
             email: process.env.GOOGLE_CLIENT_EMAIL,
-            key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+            key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim(),
             scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
         });
         const sheets = google.sheets({ version: 'v4', auth: client });
