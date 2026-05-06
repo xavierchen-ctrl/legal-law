@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
     const path = request.nextUrl.pathname;
 
     // Define public paths that don't need auth
-    const isPublicPath = path === '/login' || path.startsWith('/_next') || path === '/favicon.ico' || path.startsWith('/api/auth');
+    const isPublicPath = path === '/login' || path.startsWith('/_next') || path === '/favicon.ico' || path.startsWith('/api/auth') || path === '/api/debug-env';
 
     // Check for auth token
     const token = request.cookies.get('auth_token')?.value;
