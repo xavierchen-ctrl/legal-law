@@ -1,49 +1,29 @@
 import { NextResponse } from 'next/server';
-import { execSync } from 'child_process';
-import { writeFileSync, readFileSync, rmSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { randomUUID } from 'crypto';
+import AdmZip from 'adm-zip';
 import { extractTextFromPdf } from '@/lib/pdf-helper';
 
 export const dynamic = 'force-dynamic';
 
 async function extractDocx(buffer: Buffer): Promise<string> {
-    const id = randomUUID();
-    const tmpBase = join(tmpdir(), `docx_${id}`);
-    const zipPath = `${tmpBase}.zip`;   // Expand-Archive only accepts .zip
-    const extractDir = `${tmpBase}_extracted`;
+    const zip = new AdmZip(buffer);
+    const entry = zip.getEntry('word/document.xml');
+    if (!entry) throw new Error('無法在 DOCX 中找到 word/document.xml');
 
-    try {
-        writeFileSync(zipPath, buffer);
-        mkdirSync(extractDir, { recursive: true });
+    const xml = entry.getData().toString('utf8');
 
-        execSync(
-            `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`,
-            { timeout: 15000 }
-        );
+    const text = xml
+        .replace(/<w:p[ >]/g, '\n<w:p ')
+        .replace(/<w:t[^>]*>([^<]*)<\/w:t>/g, '$1')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
 
-        const xmlPath = join(extractDir, 'word', 'document.xml');
-        const xml = readFileSync(xmlPath, 'utf8');
-
-        // Extract text from <w:t> elements, preserve paragraph breaks
-        const text = xml
-            .replace(/<w:p[ >]/g, '\n<w:p ')
-            .replace(/<w:t[^>]*>([^<]*)<\/w:t>/g, '$1')
-            .replace(/<[^>]+>/g, '')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
-
-        return text;
-    } finally {
-        try { rmSync(zipPath, { force: true }); } catch {}
-        try { rmSync(extractDir, { recursive: true, force: true }); } catch {}
-    }
+    return text;
 }
 
 export async function POST(request: Request) {
