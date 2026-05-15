@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
 
+const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+
 export type ChangeType = 'ADDED' | 'REMOVED' | 'MODIFIED' | 'UNCHANGED';
 export type ImpactLevel = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
 export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
@@ -35,7 +37,7 @@ export async function compareContractVersions(
     reviewComments: string,
     apiKey?: string
 ): Promise<ContractDiffResult> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
     if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
 
     try {

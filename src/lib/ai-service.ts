@@ -2,6 +2,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
 
+const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+
 
 export interface AIRule {
     ruleName: string;
@@ -20,7 +22,7 @@ export interface AIAnalysisResult {
  * Validates connectivity to Gemini API
  */
 export async function testGeminiConnection(apiKey?: string): Promise<boolean> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
     if (!effectiveKey) {
         console.error('GEMINI_API_KEY is not set');
         return false;
@@ -43,7 +45,7 @@ export async function testGeminiConnection(apiKey?: string): Promise<boolean> {
  * Analyzes contract text against a set of rules
  */
 export async function analyzeContractWithAI(text: string, rules: AIRule[], apiKey?: string): Promise<AIAnalysisResult[]> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
 
     if (!effectiveKey) {
         await logSystemEvent('AI_Service', 'ERROR', 'Missing GEMINI_API_KEY');
@@ -140,7 +142,7 @@ export interface ArchitectureReviewItem {
  * Perform a 5-point architecture review of the contract text
  */
 export async function analyzeContractArchitecture(text: string, apiKey?: string): Promise<ArchitectureReviewItem[]> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
 
     if (!effectiveKey) {
         throw new Error('Missing GEMINI_API_KEY');
@@ -217,7 +219,7 @@ export async function reviewContractNameAndPreamble(
     text: string,
     apiKey?: string
 ): Promise<NamePreambleReviewResult> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
     if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
 
     try {

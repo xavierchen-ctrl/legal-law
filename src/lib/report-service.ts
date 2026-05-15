@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
 
+const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+
 export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export type RiskClassification = 'MUST_FIX' | 'ACCEPTABLE';
 export type SigningRec = 'APPROVE' | 'APPROVE_WITH_MODIFICATIONS' | 'REJECT';
@@ -46,7 +48,7 @@ export async function generateContractReport(
     businessBackground: string,
     apiKey?: string
 ): Promise<ContractReportResult> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
     if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
 
     try {

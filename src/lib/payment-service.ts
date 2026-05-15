@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
 
+const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+
 export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export type DeviationType = 'UNFAVORABLE' | 'FAVORABLE' | 'NEUTRAL';
 export type Recommendation = 'APPROVE' | 'ESCALATE' | 'REJECT';
@@ -41,7 +43,7 @@ export async function analyzePaymentTerms(
     counterpartyType: 'existing' | 'new',
     apiKey?: string
 ): Promise<PaymentCheckResult> {
-    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
     if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
 
     try {
