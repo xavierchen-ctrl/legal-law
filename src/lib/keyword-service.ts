@@ -23,8 +23,8 @@ async function getSheetsClient() {
     }
 
     const client = new JWT({
-        email: process.env.GOOGLE_CLIENT_EMAIL,
-        key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim(),
+        email: (process.env.GOOGLE_CLIENT_EMAIL || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim(),
+        key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim(),
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 

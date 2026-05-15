@@ -17,9 +17,11 @@ export async function GET() {
     // 直接測試 Google Sheets API
     let sheetsTest = '';
     try {
+        const cleanEmail = (process.env.GOOGLE_CLIENT_EMAIL || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+        const cleanKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim();
         const client = new JWT({
-            email: process.env.GOOGLE_CLIENT_EMAIL,
-            key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim(),
+            email: cleanEmail,
+            key: cleanKey,
             scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
         });
         const sheets = google.sheets({ version: 'v4', auth: client });

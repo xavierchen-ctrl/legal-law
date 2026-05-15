@@ -22,11 +22,16 @@ export interface SheetContract {
     lastReplyDate: string | null;
 }
 
-function parsePrivateKey(raw: string | undefined): string {
+function cleanEnvString(raw: string | undefined): string {
     return (raw || '')
+        .replace(/^﻿/, '')      // 去除 BOM 字元
         .replace(/^["']|["']$/g, '') // 去除 Vercel 可能帶入的外層引號
-        .replace(/\\n/g, '\n')        // 將 \n 轉成真正換行
         .trim();
+}
+
+function parsePrivateKey(raw: string | undefined): string {
+    return cleanEnvString(raw)
+        .replace(/\\n/g, '\n'); // 將 \n 轉成真正換行
 }
 
 // Reuse Auth logic
@@ -36,7 +41,7 @@ export async function getSheetsClient() {
     }
 
     const client = new JWT({
-        email: process.env.GOOGLE_CLIENT_EMAIL,
+        email: cleanEnvString(process.env.GOOGLE_CLIENT_EMAIL),
         key: parsePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
         scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'], // Read-only is enough for fetching contracts
     });
