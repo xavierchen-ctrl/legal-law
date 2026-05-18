@@ -5,6 +5,8 @@ import GcisVerifyPanel from '@/components/GcisVerifyPanel';
 import ArchitectureReviewPanel from '@/components/ArchitectureReviewPanel';
 import ContractTranslationPanel from '@/components/ContractTranslationPanel';
 import ContractChToEnPanel from '@/components/ContractChToEnPanel';
+import ContractGenericTranslationPanel from '@/components/ContractGenericTranslationPanel';
+import type { GenericLangPair } from '@/lib/translation-service';
 import ContractNameReviewPanel from '@/components/ContractNameReviewPanel';
 import PaymentCheckPanel from '@/components/PaymentCheckPanel';
 import ContractReportPanel from '@/components/ContractReportPanel';
@@ -29,7 +31,7 @@ const TABS = [
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
-type TranslationDirection = 'en-to-zh' | 'zh-to-en';
+type TranslationDirection = 'en-to-zh' | 'zh-to-en' | GenericLangPair;
 
 export default function ContractToolTabs({ documentName, contractNumber, companyName, businessNo, counterparty }: Props) {
     const [activeTab, setActiveTab] = useState<TabId>('gcis');
@@ -75,36 +77,38 @@ export default function ContractToolTabs({ documentName, contractNumber, company
                 {activeTab === 'translation' && (
                     <div className="space-y-3">
                         {/* Direction toggle */}
-                        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold w-fit">
-                            <button
-                                onClick={() => setTranslationDir('en-to-zh')}
-                                className={`px-5 py-2 transition-colors ${
-                                    translationDir === 'en-to-zh'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-white text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                🌐 英翻中
-                            </button>
-                            <button
-                                onClick={() => setTranslationDir('zh-to-en')}
-                                className={`px-5 py-2 transition-colors ${
-                                    translationDir === 'zh-to-en'
-                                        ? 'bg-teal-600 text-white'
-                                        : 'bg-white text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                📝 中翻英
-                            </button>
+                        <div className="grid grid-cols-2 gap-1.5 text-xs font-semibold">
+                            {([
+                                { dir: 'en-to-zh', label: '🌐 英翻中',    active: 'bg-blue-600 text-white',   base: 'border-blue-200' },
+                                { dir: 'zh-to-en', label: '📝 中翻英',    active: 'bg-teal-600 text-white',   base: 'border-teal-200' },
+                                { dir: 'zh-ja',    label: '🇯🇵 中翻日',    active: 'bg-rose-600 text-white',   base: 'border-rose-200' },
+                                { dir: 'ja-zh',    label: '🇯🇵 日翻中',    active: 'bg-rose-600 text-white',   base: 'border-rose-200' },
+                                { dir: 'zh-zhs',   label: '🇨🇳 中翻簡體',  active: 'bg-orange-500 text-white', base: 'border-orange-200' },
+                                { dir: 'zhs-zh',   label: '🇹🇼 簡體翻中',  active: 'bg-orange-500 text-white', base: 'border-orange-200' },
+                                { dir: 'zh-vi',    label: '🇻🇳 中翻越南',  active: 'bg-green-600 text-white',  base: 'border-green-200' },
+                                { dir: 'vi-zh',    label: '🇻🇳 越南翻中',  active: 'bg-green-600 text-white',  base: 'border-green-200' },
+                            ] as const).map(({ dir, label, active, base }) => (
+                                <button
+                                    key={dir}
+                                    onClick={() => setTranslationDir(dir)}
+                                    className={`py-2 px-3 rounded-lg border transition-colors ${
+                                        translationDir === dir ? active : `bg-white text-gray-600 hover:bg-gray-50 ${base}`
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
                         </div>
 
-                        {translationDir === 'en-to-zh' ? (
-                            <ContractTranslationPanel
-                                documentName={documentName}
-                                contractNumber={contractNumber}
-                            />
-                        ) : (
-                            <ContractChToEnPanel
+                        {translationDir === 'en-to-zh' && (
+                            <ContractTranslationPanel documentName={documentName} contractNumber={contractNumber} />
+                        )}
+                        {translationDir === 'zh-to-en' && (
+                            <ContractChToEnPanel documentName={documentName} contractNumber={contractNumber} />
+                        )}
+                        {(translationDir !== 'en-to-zh' && translationDir !== 'zh-to-en') && (
+                            <ContractGenericTranslationPanel
+                                langPair={translationDir as GenericLangPair}
                                 documentName={documentName}
                                 contractNumber={contractNumber}
                             />

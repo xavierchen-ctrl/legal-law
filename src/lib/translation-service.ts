@@ -302,3 +302,66 @@ The "legalTerms" array should list only notable legal terms requiring a translat
         throw error;
     }
 }
+
+export type GenericLangPair =
+    | 'zh-ja'   // 中翻日
+    | 'ja-zh'   // 日翻中
+    | 'zh-zhs'  // 中翻簡體
+    | 'zhs-zh'  // 簡體翻中
+    | 'zh-vi'   // 中翻越南
+    | 'vi-zh';  // 越南翻中
+
+export interface GenericTranslationResult {
+    summary: string;
+    translatedText: string;
+}
+
+const LANG_META: Record<GenericLangPair, { from: string; to: string; instruction: string }> = {
+    'zh-ja':  { from: '繁體中文', to: '日文',   instruction: '請將以下繁體中文合約條款翻譯為日文（正式法律用語）。保留所有法律效力，使用書面日語敬體（です・ます體），法律術語使用慣用漢字。' },
+    'ja-zh':  { from: '日文',    to: '繁體中文', instruction: '請將以下日文合約條款翻譯為繁體中文（正式法律用語）。保留所有法律效力，使用台灣慣用法律用詞。' },
+    'zh-zhs': { from: '繁體中文', to: '簡體中文', instruction: '請將以下繁體中文合約條款轉換為簡體中文。保留所有法律用語與格式，僅作文字轉換，不更動任何語意或條款結構。' },
+    'zhs-zh': { from: '簡體中文', to: '繁體中文', instruction: '請將以下簡體中文合約條款轉換為繁體中文（台灣用法）。保留所有法律用語與格式，僅作文字轉換，不更動任何語意或條款結構。' },
+    'zh-vi':  { from: '繁體中文', to: '越南文',  instruction: '請將以下繁體中文合約條款翻譯為越南文（正式法律用語）。保留所有法律效力，使用越南商業合約慣用措辭。' },
+    'vi-zh':  { from: '越南文',  to: '繁體中文', instruction: '請將以下越南文合約條款翻譯為繁體中文（正式法律用語）。保留所有法律效力，使用台灣慣用法律用詞。' },
+};
+
+export async function translateGeneric(
+    text: string,
+    langPair: GenericLangPair,
+    apiKey?: string
+): Promise<GenericTranslationResult> {
+    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
+    if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
+
+    const meta = LANG_META[langPair];
+
+    try {
+        const genAI = new GoogleGenerativeAI(effectiveKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+
+        const prompt = `你是一位資深法律翻譯專家。
+
+${meta.instruction}
+
+輸入合約原文（${meta.from}）：
+"""
+${text.substring(0, 28000)}
+"""
+
+請以純 JSON 格式回傳（不含 markdown code block）：
+{
+  "summary": "本合約內容摘要（2-3句，以${meta.to}撰寫）",
+  "translatedText": "完整翻譯後的合約條款（${meta.to}）"
+}`;
+
+        const result = await model.generateContent(prompt);
+        let responseText = result.response.text();
+        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        return JSON.parse(responseText) as GenericTranslationResult;
+    } catch (error: any) {
+        console.error(`[TranslationService ${langPair}] Failed:`, error);
+        await logSystemEvent('TranslationService', 'ERROR', `${langPair} translation failed: ${error.message}`);
+        throw error;
+    }
+}
