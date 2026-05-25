@@ -38,6 +38,14 @@ export default function FilterBar() {
         replace(`${pathname}?${params.toString()}`);
     };
 
+    const handleSortChange = (sort: 'newest' | 'oldest') => {
+        const params = new URLSearchParams(searchParams);
+        params.set('sort', sort);
+        replace(`${pathname}?${params.toString()}`);
+    };
+
+    const currentSort = searchParams.get('sort') ?? 'newest';
+
     return (
         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm mb-6 flex flex-wrap gap-4 items-center">
             {/* Search Input */}
@@ -79,6 +87,29 @@ export default function FilterBar() {
                     />
                     <span className="font-medium text-gray-700">只看急件 (Urgent Only)</span>
                 </label>
+            </div>
+
+            {/* Sort Toggle */}
+            <div className="flex items-end gap-1 pt-0">
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                        排序
+                    </label>
+                    <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                        <button
+                            onClick={() => handleSortChange('newest')}
+                            className={`px-3 py-2 transition-colors ${currentSort === 'newest' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        >
+                            ↓ 新到舊
+                        </button>
+                        <button
+                            onClick={() => handleSortChange('oldest')}
+                            className={`px-3 py-2 transition-colors ${currentSort === 'oldest' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        >
+                            ↑ 舊到新
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );

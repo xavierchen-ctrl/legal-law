@@ -8,12 +8,13 @@ import { parseSheetDate } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Dashboard(props: { searchParams?: Promise<{ showAll?: string, q?: string, dept?: string, urgent?: string }> }) {
+export default async function Dashboard(props: { searchParams?: Promise<{ showAll?: string, q?: string, dept?: string, urgent?: string, sort?: string }> }) {
   const searchParams = await props.searchParams;
   const showAll = searchParams?.showAll === 'true';
   const query = searchParams?.q?.toLowerCase() || '';
   const deptFilter = searchParams?.dept?.toLowerCase() || '';
   const isUrgentOnly = searchParams?.urgent === 'true';
+  const sortOrder = searchParams?.sort === 'oldest' ? 'oldest' : 'newest';
 
   const contracts = await fetchContractsFromSheet();
 
@@ -117,6 +118,10 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
     }
 
     return true;
+  }).sort((a, b) => {
+    const dateA = parseSheetDate(a.requestDate)?.getTime() ?? 0;
+    const dateB = parseSheetDate(b.requestDate)?.getTime() ?? 0;
+    return sortOrder === 'oldest' ? dateA - dateB : dateB - dateA;
   });
 
   const legacyCount = enrichedContracts.filter(c => {
