@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import type { ChToEnTranslationResult, ChToEnTranslationClause } from '@/lib/translation-service';
 import LoadingModal from './LoadingModal';
+import FileUploadZone from './FileUploadZone';
 
 interface Props {
     documentName?: string;
     contractNumber?: string;
 }
 
-type InputMode = 'text' | 'drive';
+type InputMode = 'text' | 'upload';
 
 function ScopeWarningBadge({ count }: { count: number }) {
     if (count === 0) return null;
@@ -161,6 +162,8 @@ function ClauseCard({ clause }: { clause: ChToEnTranslationClause }) {
 export default function ContractChToEnPanel({ documentName, contractNumber }: Props) {
     const [mode, setMode] = useState<InputMode>('text');
     const [rawText, setRawText] = useState('');
+    const [uploadedText, setUploadedText] = useState('');
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<ChToEnTranslationResult | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -172,18 +175,13 @@ export default function ContractChToEnPanel({ documentName, contractNumber }: Pr
         setResult(null);
 
         try {
-            const body =
-                mode === 'text'
-                    ? { rawText }
-                    : { documentName, contractNumber };
-
+            const textToSend = mode === 'text' ? rawText : uploadedText;
             const res = await fetch('/api/contract-translation-cten', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
+                body: JSON.stringify({ rawText: textToSend }),
             });
             const data = await res.json();
-
             if (!res.ok) throw new Error(data.error ?? '翻譯失敗');
             setResult(data.result);
         } catch (err: any) {
@@ -195,7 +193,7 @@ export default function ContractChToEnPanel({ documentName, contractNumber }: Pr
 
     const totalAmbiguities = result?.clauses.reduce((sum, c) => sum + c.ambiguities.length, 0) ?? 0;
     const totalScopeWarnings = result?.clauses.reduce((sum, c) => sum + c.scopeWarnings.length, 0) ?? 0;
-    const canSubmit = mode === 'text' ? rawText.trim().length > 10 : !!documentName;
+    const canSubmit = mode === 'text' ? rawText.trim().length > 10 : uploadedText.length > 10;
 
     return (
         <div className="card p-6 space-y-4 shadow-sm border border-teal-100 bg-gradient-to-b from-white to-teal-50/30">
@@ -224,11 +222,10 @@ export default function ContractChToEnPanel({ documentName, contractNumber }: Pr
                     貼上文字
                 </button>
                 <button
-                    onClick={() => setMode('drive')}
-                    disabled={!documentName}
-                    className={`flex-1 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === 'drive' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    onClick={() => setMode('upload')}
+                    className={`flex-1 py-2 transition-colors ${mode === 'upload' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                 >
-                    從 Drive 載入
+                    上傳檔案
                 </button>
             </div>
 
@@ -242,12 +239,14 @@ export default function ContractChToEnPanel({ documentName, contractNumber }: Pr
                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white text-gray-800 placeholder-gray-400"
                 />
             ) : (
-                <div className="bg-white rounded p-3 border border-gray-100">
-                    <label className="text-xs text-gray-400 block mb-1">目標文件</label>
-                    <div className="text-sm font-medium text-gray-700 truncate" title={documentName}>
-                        📄 {documentName || '未命名檔案'}
-                    </div>
-                </div>
+                <>
+                    <FileUploadZone
+                        accentColor="teal"
+                        onTextExtracted={(text) => { setUploadedText(text); setUploadError(null); }}
+                        onError={msg => setUploadError(msg)}
+                    />
+                    {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+                </>
             )}
 
             {/* Translate button */}
