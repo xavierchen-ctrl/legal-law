@@ -19,6 +19,9 @@ export interface EnrichedContract {
     lastReplyDate?: string | null;
     postReviewDays?: number;
     isPostReviewOverdue?: boolean;
+    estimatedReplyDate?: string | null;
+    stampInProgress?: boolean;
+    isArchived?: boolean;
 }
 
 export default function ContractsTable({ contracts }: { contracts: EnrichedContract[] }) {

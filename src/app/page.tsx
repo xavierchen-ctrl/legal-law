@@ -8,13 +8,18 @@ import { parseSheetDate } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Dashboard(props: { searchParams?: Promise<{ showAll?: string, q?: string, dept?: string, urgent?: string, sort?: string }> }) {
+export default async function Dashboard(props: { searchParams?: Promise<{ showAll?: string, q?: string, dept?: string, urgent?: string, sort?: string, status?: string, dateFrom?: string, dateTo?: string, replyFrom?: string, replyTo?: string }> }) {
   const searchParams = await props.searchParams;
   const showAll = searchParams?.showAll === 'true';
   const query = searchParams?.q?.toLowerCase() || '';
   const deptFilter = searchParams?.dept?.toLowerCase() || '';
   const isUrgentOnly = searchParams?.urgent === 'true';
   const sortOrder = searchParams?.sort === 'oldest' ? 'oldest' : 'newest';
+  const statusFilter = searchParams?.status || '';
+  const dateFrom = searchParams?.dateFrom || '';
+  const dateTo = searchParams?.dateTo || '';
+  const replyFrom = searchParams?.replyFrom || '';
+  const replyTo = searchParams?.replyTo || '';
 
   const contracts = await fetchContractsFromSheet();
 
@@ -117,6 +122,37 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
       if (c.priority !== 'URGENT') return false;
     }
 
+    // 6. Status Filter
+    if (statusFilter) {
+      if (statusFilter === 'PENDING_STAMP') {
+        if (!(c.status === 'PENDING_STAMP' || c.stampInProgress)) return false;
+      } else if (statusFilter === 'CLOSED') {
+        if (!c.isArchived) return false;
+      } else {
+        if (c.status !== statusFilter) return false;
+      }
+    }
+
+    // 7. Request Date Range
+    if (dateFrom) {
+      const d = parseSheetDate(c.requestDate);
+      if (!d || d < new Date(dateFrom)) return false;
+    }
+    if (dateTo) {
+      const d = parseSheetDate(c.requestDate);
+      if (!d || d > new Date(dateTo + 'T23:59:59')) return false;
+    }
+
+    // 8. Estimated Reply Date Range
+    if (replyFrom) {
+      const d = c.estimatedReplyDate ? parseSheetDate(c.estimatedReplyDate) : null;
+      if (!d || d < new Date(replyFrom)) return false;
+    }
+    if (replyTo) {
+      const d = c.estimatedReplyDate ? parseSheetDate(c.estimatedReplyDate) : null;
+      if (!d || d > new Date(replyTo + 'T23:59:59')) return false;
+    }
+
     return true;
   }).sort((a, b) => {
     const dateA = parseSheetDate(a.requestDate)?.getTime() ?? 0;
@@ -174,6 +210,9 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
             前往試算表作業
           </a>
           <div className="flex gap-4">
+            <Link href="/drafting" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-violet-600">
+              <span>✍️</span> 文件撰擬
+            </Link>
             <Link href="/reviews" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-blue-600">
               <span>⚖️</span> 智慧審閱
             </Link>
