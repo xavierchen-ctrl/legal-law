@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PaymentCheckResult, PaymentDeviation, RiskLevel, Recommendation } from '@/lib/payment-service';
 import LoadingModal from './LoadingModal';
+import FileUploadZone from './FileUploadZone';
 
 interface Props {
     documentName?: string;
@@ -10,7 +11,7 @@ interface Props {
     counterparty?: string;
 }
 
-type InputMode = 'text' | 'drive';
+type InputMode = 'text' | 'upload';
 
 const RISK_STYLE: Record<RiskLevel, { label: string; banner: string; icon: string; color: string }> = {
     HIGH:   { label: '高風險', banner: 'border-red-300 bg-red-50',    icon: '🔴', color: 'text-red-700' },
@@ -58,6 +59,8 @@ function DeviationRow({ d }: { d: PaymentDeviation }) {
 export default function PaymentCheckPanel({ documentName, contractNumber, counterparty }: Props) {
     const [mode, setMode] = useState<InputMode>('text');
     const [rawText, setRawText] = useState('');
+    const [uploadedText, setUploadedText] = useState('');
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [historicalTerms, setHistoricalTerms] = useState('');
     const [companyPolicy, setCompanyPolicy] = useState('');
     const [transactionBackground, setTransactionBackground] = useState('');
@@ -82,9 +85,8 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
         setConfirmResult(null);
 
         try {
-            const body = mode === 'text'
-                ? { rawText, historicalTerms, companyPolicy, transactionBackground, counterpartyType }
-                : { documentName, contractNumber, historicalTerms, companyPolicy, transactionBackground, counterpartyType };
+            const textToSend = mode === 'text' ? rawText : uploadedText;
+            const body = { rawText: textToSend, historicalTerms, companyPolicy, transactionBackground, counterpartyType };
 
             const res = await fetch('/api/payment-check', {
                 method: 'POST',
@@ -129,7 +131,7 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
         }
     };
 
-    const canSubmit = mode === 'text' ? rawText.trim().length > 20 : !!documentName;
+    const canSubmit = mode === 'text' ? rawText.trim().length > 20 : uploadedText.length > 20;
     const rs = result ? RISK_STYLE[result.riskLevel] : null;
     const rec = result ? REC_STYLE[result.recommendation] : null;
 
@@ -179,11 +181,10 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
                     貼上付款條款
                 </button>
                 <button
-                    onClick={() => setMode('drive')}
-                    disabled={!documentName}
-                    className={`flex-1 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === 'drive' ? 'bg-cyan-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    onClick={() => setMode('upload')}
+                    className={`flex-1 py-2 transition-colors ${mode === 'upload' ? 'bg-cyan-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                 >
-                    從 Drive 載入
+                    上傳檔案
                 </button>
             </div>
 
@@ -196,10 +197,14 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
                     className="w-full text-xs border border-cyan-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-300 bg-cyan-50/20 text-gray-800 placeholder-gray-400"
                 />
             ) : (
-                <div className="bg-white rounded p-3 border border-gray-100">
-                    <label className="text-xs text-gray-400 block mb-1">目標文件</label>
-                    <div className="text-sm font-medium text-gray-700 truncate">📄 {documentName}</div>
-                </div>
+                <>
+                    <FileUploadZone
+                        accentColor="blue"
+                        onTextExtracted={(text) => { setUploadedText(text); setUploadError(null); }}
+                        onError={msg => setUploadError(msg)}
+                    />
+                    {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+                </>
             )}
 
             {/* Advanced inputs */}

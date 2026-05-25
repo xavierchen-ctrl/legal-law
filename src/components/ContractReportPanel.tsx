@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import LoadingModal from './LoadingModal';
+import FileUploadZone from './FileUploadZone';
 import type {
     ContractReportResult, RiskItem, RiskLevel, RiskClassification, SigningRec
 } from '@/lib/report-service';
@@ -11,7 +12,7 @@ interface Props {
     contractNumber?: string;
 }
 
-type InputMode = 'text' | 'drive';
+type InputMode = 'text' | 'upload';
 
 // ── Style maps ──────────────────────────────────────────────────────────────
 
@@ -151,6 +152,8 @@ function exportReport(result: ContractReportResult, contractNumber?: string) {
 export default function ContractReportPanel({ documentName, contractNumber }: Props) {
     const [mode, setMode] = useState<InputMode>('text');
     const [rawText, setRawText] = useState('');
+    const [uploadedText, setUploadedText] = useState('');
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [reviewNotes, setReviewNotes] = useState('');
     const [businessBackground, setBusinessBackground] = useState('');
     const [showInputs, setShowInputs] = useState(false);
@@ -168,9 +171,8 @@ export default function ContractReportPanel({ documentName, contractNumber }: Pr
         setResult(null);
 
         try {
-            const body = mode === 'text'
-                ? { rawText, reviewNotes, businessBackground }
-                : { documentName, contractNumber, reviewNotes, businessBackground };
+            const textToSend = mode === 'text' ? rawText : uploadedText;
+            const body = { rawText: textToSend, reviewNotes, businessBackground };
 
             const res = await fetch('/api/contract-report', {
                 method: 'POST',
@@ -188,7 +190,7 @@ export default function ContractReportPanel({ documentName, contractNumber }: Pr
         }
     };
 
-    const canSubmit = mode === 'text' ? rawText.trim().length > 20 : !!documentName;
+    const canSubmit = mode === 'text' ? rawText.trim().length > 20 : uploadedText.length > 20;
 
     const overallRl = result ? RISK_LEVEL[result.riskSummary.overallRisk] : null;
     const recStyle = result ? SIGNING_REC[result.signingRecommendation.recommendation] : null;
@@ -227,11 +229,10 @@ export default function ContractReportPanel({ documentName, contractNumber }: Pr
                     貼上合約
                 </button>
                 <button
-                    onClick={() => setMode('drive')}
-                    disabled={!documentName}
-                    className={`flex-1 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${mode === 'drive' ? 'bg-rose-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    onClick={() => setMode('upload')}
+                    className={`flex-1 py-2 transition-colors ${mode === 'upload' ? 'bg-rose-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                 >
-                    從 Drive 載入
+                    上傳檔案
                 </button>
             </div>
 
@@ -244,10 +245,14 @@ export default function ContractReportPanel({ documentName, contractNumber }: Pr
                     className="w-full text-xs border border-rose-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-rose-300 bg-rose-50/20 text-gray-800 placeholder-gray-400"
                 />
             ) : (
-                <div className="bg-white rounded p-3 border border-gray-100">
-                    <label className="text-xs text-gray-400 block mb-1">目標文件</label>
-                    <div className="text-sm font-medium text-gray-700 truncate">📄 {documentName}</div>
-                </div>
+                <>
+                    <FileUploadZone
+                        accentColor="rose"
+                        onTextExtracted={(text) => { setUploadedText(text); setUploadError(null); }}
+                        onError={msg => setUploadError(msg)}
+                    />
+                    {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+                </>
             )}
 
             {/* Optional inputs */}
