@@ -196,11 +196,14 @@ export async function analyzeContractArchitecture(text: string, apiKey?: string)
     }
 }
 
+export type FindingType = 'MAJOR_RISK' | 'GENERAL_RISK' | 'OPTIMIZATION' | 'DRAFTING' | 'PASS';
+
 export interface NamePreambleReviewItem {
     id: number;
     category: string;
     title: string;
     status: 'PASS' | 'WARN' | 'FAIL';
+    findingType: FindingType;
     detail: string;
     suggestion: string | null;
 }
@@ -210,13 +213,20 @@ export interface NamePreambleReviewResult {
     suggestedName: string | null;
     suggestedPreamble: string | null;
     overallAssessment: string;
+    trackChangesDetected: boolean;
+    trackChangesWarning: string | null;
 }
 
-/**
- * Review contract name and preamble for accuracy and legal appropriateness
- */
+export interface NamePreambleCaseContext {
+    businessBackground?: string;
+    isCounterpartyTemplate?: boolean;
+    hasNegotiationLeverage?: boolean;
+    departmentNotes?: string;
+}
+
 export async function reviewContractNameAndPreamble(
     text: string,
+    caseContext?: NamePreambleCaseContext,
     apiKey?: string
 ): Promise<NamePreambleReviewResult> {
     const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
@@ -226,43 +236,71 @@ export async function reviewContractNameAndPreamble(
         const genAI = new GoogleGenerativeAI(effectiveKey);
         const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
-        const prompt = `
-You are a senior Taiwanese legal counsel specializing in contract review.
+        const contextSection = caseContext && (
+            caseContext.businessBackground || caseContext.isCounterpartyTemplate !== undefined ||
+            caseContext.hasNegotiationLeverage !== undefined || caseContext.departmentNotes
+        ) ? `
+Case Context (provided by legal team — factor this into your analysis):
+- Business background / collaboration context: ${caseContext.businessBackground || '(not provided)'}
+- Is this the counterparty's standard template: ${caseContext.isCounterpartyTemplate === true ? 'YES — adjustments may face resistance; flag critical issues only' : caseContext.isCounterpartyTemplate === false ? 'NO — our draft or jointly negotiated' : '(not specified)'}
+- Has negotiation leverage to request amendments: ${caseContext.hasNegotiationLeverage === true ? 'YES — flag all improvable items' : caseContext.hasNegotiationLeverage === false ? 'NO — focus on MAJOR_RISK items only' : '(not specified)'}
+- Requesting department notes: ${caseContext.departmentNotes || '(none)'}
+` : '';
 
-Analyze the following contract text and perform a focused review of the **contract name** and **preamble (前言/鑒於條款)** based on exactly 5 criteria. Your goal is to identify whether the name and preamble accurately reflect the transaction's legal nature and avoid interpretation disputes.
+        const prompt = `You are a senior Taiwanese legal counsel specializing in contract review.
 
-Contract Text:
+═══ STEP 1: TRACK CHANGES DETECTION ═══
+Before analyzing, scan the contract text for Track Changes / comment markers:
+- Strikethrough or deletion markers: ~~text~~, ---text---, [DELETED:...], (del:...), w:del artifacts
+- Insertion markers: [INSERTED:...], [ADD:...], w:ins artifacts
+- Comment/annotation markers: [Comment:...], <!--...-->, {NOTE:...}, COMMENT(...)
+- Revision identifiers: REVISION, TRACKED, redline, markup language remnants
+
+If such markers are found: set trackChangesDetected=true and explain in trackChangesWarning what was found and that the analysis is based on the apparent final/accepted text only (tracked deletions are ignored).
+If none found: trackChangesDetected=false, trackChangesWarning=null.
+${contextSection}
+═══ STEP 2: CONTRACT TEXT ═══
 """
 ${text.substring(0, 20000)}
 """
 
-Review Criteria (evaluate ALL 5):
+═══ STEP 3: REVIEW CRITERIA ═══
+Analyze the contract name and preamble on exactly 5 criteria:
 1. 契約名稱是否與實際交易內容一致（名稱反映的法律關係是否符合條款實質）
 2. 前言是否正確描述合作目的與交易架構（背景、目的、當事人角色）
 3. 契約名稱與條款內容是否一致（避免名稱標榜甲方不承擔責任但條款卻相反）
 4. 是否使用不精確或誤導性用語（如誤用「合作」代替「委託」、「顧問」代替「僱傭」）
 5. 名稱或前言是否可能影響後續法律解釋或責任認定（如勞動/承攬爭議、稅務定性）
 
-Output Format:
-Return ONLY a raw JSON object (no markdown). Structure:
+═══ STEP 4: FINDING TYPE CLASSIFICATION ═══
+For each non-PASS item, assign a findingType — be conservative, do NOT over-classify:
+- MAJOR_RISK (重大法律風險): Only if the issue could affect contract validity/enforceability, create serious unintended liability, cause a legal status misclassification (e.g. employment vs. contract-for-service), or expose a party to regulatory/tax consequences. This should be rare.
+- GENERAL_RISK (一般風險提醒): Moderate concern worth noting — minor ambiguity, incomplete description, or potential (but not certain) dispute trigger.
+- OPTIMIZATION (條文優化): Could be clearer, more precise, or more complete, but poses no real legal risk.
+- DRAFTING (起草建議): Stylistic preference, conventional phrasing, or minor drafting convention — not a risk.
+For PASS items, set findingType: "PASS".
+
+═══ OUTPUT FORMAT ═══
+Return ONLY a raw JSON object (no markdown):
 {
+    "trackChangesDetected": false,
+    "trackChangesWarning": null,
     "overallAssessment": "2-3 sentence overall assessment in Traditional Chinese",
-    "suggestedName": "Suggested corrected contract name in Traditional Chinese, or null if no change needed",
-    "suggestedPreamble": "Suggested corrected or supplemented preamble text in Traditional Chinese, or null if no change needed",
+    "suggestedName": "Suggested corrected name or null",
+    "suggestedPreamble": "Suggested corrected preamble or null",
     "items": [
         {
             "id": 1,
-            "category": "Short category label (e.g. '名稱與內容一致性')",
-            "title": "Full description of criterion 1",
-            "status": "PASS" | "WARN" | "FAIL",
-            "detail": "Detailed findings in Traditional Chinese. Be specific — quote the problematic text if any.",
-            "suggestion": "Specific correction suggestion in Traditional Chinese, or null if status is PASS"
+            "category": "Short category label",
+            "title": "Full criterion description",
+            "status": "PASS",
+            "findingType": "PASS",
+            "detail": "Detailed findings in Traditional Chinese — quote problematic text if any",
+            "suggestion": null
         }
     ]
 }
-
-Return exactly 5 items corresponding to the 5 criteria above, in order.
-`;
+Return exactly 5 items in order.`;
 
         const result = await model.generateContent(prompt);
         let responseText = result.response.text();

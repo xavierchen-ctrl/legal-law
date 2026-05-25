@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from 'next/server';
 import { listFiles, downloadFile, findFileByDocumentName } from '@/lib/drive-service';
 import { reviewContractNameAndPreamble } from '@/lib/ai-service';
+import type { NamePreambleCaseContext } from '@/lib/ai-service';
 import { extractTextFromPdf } from '@/lib/pdf-helper';
 
 export const dynamic = 'force-dynamic';
@@ -8,7 +9,10 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { documentName, contractNumber, rawText } = body;
+        const { documentName, contractNumber, rawText, caseContext } = body as {
+            documentName?: string; contractNumber?: string; rawText?: string;
+            caseContext?: NamePreambleCaseContext;
+        };
 
         let textContent = '';
 
@@ -65,7 +69,7 @@ export async function POST(request: Request) {
         }
 
         console.log(`[NameReview] Text length: ${textContent.length} chars`);
-        const result = await reviewContractNameAndPreamble(textContent);
+        const result = await reviewContractNameAndPreamble(textContent, caseContext);
 
         return NextResponse.json({ success: true, result });
 
