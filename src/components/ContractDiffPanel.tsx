@@ -31,10 +31,19 @@ function VersionInput({ label, value, onChange, accentColor }: VersionInputProps
         setUploading(true);
         setFileName(file.name);
         try {
+            const fileMB = file.size / 1024 / 1024;
+            if (file.size > 4 * 1024 * 1024) {
+                throw new Error(`📁 檔案太大（${fileMB.toFixed(1)} MB），系統上限為 4 MB。\n建議：切換至上方「貼上文字」模式，直接貼上合約內容即可。`);
+            }
             const form = new FormData();
             form.append('file', file);
             const res = await fetch('/api/extract-text', { method: 'POST', body: form });
-            const data = await res.json();
+            let data: any;
+            try {
+                data = await res.json();
+            } catch {
+                throw new Error('📁 檔案太大或伺服器無法處理。\n建議：切換至上方「貼上文字」模式，直接貼上合約內容即可。');
+            }
             if (!res.ok) throw new Error(data.error ?? '解析失敗');
             onChange(data.text);
         } catch (err: any) {
@@ -114,6 +123,7 @@ function VersionInput({ label, value, onChange, accentColor }: VersionInputProps
                             <span className="text-2xl">📄</span>
                             <p className={`text-xs font-semibold ${dropText}`}>點擊或拖曳上傳</p>
                             <p className="text-xs text-gray-400">支援 PDF、DOCX、TXT</p>
+                            <p className="text-xs text-gray-400">上限 4 MB</p>
                         </>
                     )}
                     {uploadError && <p className="text-xs text-red-500 text-center">{uploadError}</p>}
@@ -223,18 +233,32 @@ function ClauseCard({ clause, view }: { clause: ClauseDiff; view: 'diff' | 'side
                     {/* Impact */}
                     {clause.impactDescription && clause.impactLevel !== 'NONE' && (
                         <div className={`rounded p-2.5 border text-xs leading-relaxed ${is.color}`}>
-                            <p className="font-semibold mb-1">對我方影響</p>
+                            <div className="flex items-center gap-2 mb-1.5">
+                                <p className="font-semibold">對我方影響</p>
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 border border-orange-200 font-medium leading-none">
+                                    💡 AI 延伸分析
+                                </span>
+                            </div>
                             <p>{clause.impactDescription}</p>
                             {clause.affectedRights.length > 0 && (
-                                <ul className="mt-1.5 space-y-0.5">
-                                    {clause.affectedRights.map((r, i) => (
-                                        <li key={i} className="flex gap-1.5">
-                                            <span className="font-bold shrink-0">•</span>
-                                            <span>{r}</span>
-                                        </li>
-                                    ))}
-                                </ul>
+                                <>
+                                    <p className="font-semibold mt-2 mb-1">
+                                        📌 受影響項目
+                                        <span className="font-normal ml-1 opacity-75">（依條文異動推論）</span>
+                                    </p>
+                                    <ul className="space-y-0.5">
+                                        {clause.affectedRights.map((r, i) => (
+                                            <li key={i} className="flex gap-1.5">
+                                                <span className="font-bold shrink-0">•</span>
+                                                <span>{r}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </>
                             )}
+                            <p className="mt-2 pt-1.5 border-t border-current/20 opacity-70 italic">
+                                以上為 AI 延伸推論，需結合案件背景由法務人員判斷，非正式法律意見。
+                            </p>
                         </div>
                     )}
 
@@ -427,12 +451,24 @@ export default function ContractDiffPanel() {
                         </button>
                     </div>
 
+                    {/* AI 掃描覆蓋率說明 */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800 space-y-1 leading-relaxed">
+                        <div className="font-semibold">⚠️ AI 掃描範圍說明</div>
+                        <div>
+                            本次已識別 <span className="font-medium">{result.clauses.length}</span> 條條款，
+                            其中有變動 <span className="font-medium">{result.totalChanges}</span> 條。
+                        </div>
+                        <div>若原始文件條號不連續、格式特殊或條文過長，AI 可能未完整辨識所有條款。建議核對原始文件確認有無遺漏。</div>
+                        <div>畫面中標示「<span className="font-medium text-orange-600">💡 AI 延伸分析</span>」之內容為 AI 推論，<span className="font-medium">非正式法律意見</span>，不代表系統已完成完整法律風險判斷。</div>
+                    </div>
+
                     {/* Major risks & recommendations */}
                     {(result.majorRisks.length > 0 || result.recommendations.length > 0) && (
                         <div className="grid grid-cols-2 gap-3">
                             {result.majorRisks.length > 0 && (
                                 <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                                    <p className="text-xs font-bold text-red-700 mb-2">⚠️ 主要風險</p>
+                                    <p className="text-xs font-bold text-red-700 mb-0.5">⚠️ 主要風險</p>
+                                    <p className="text-xs text-red-400 mb-2 italic">AI 延伸推論，非已確認法律風險</p>
                                     <ul className="space-y-1">
                                         {result.majorRisks.map((r, i) => (
                                             <li key={i} className="text-xs text-red-600 flex gap-1.5">
@@ -445,7 +481,8 @@ export default function ContractDiffPanel() {
                             )}
                             {result.recommendations.length > 0 && (
                                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                                    <p className="text-xs font-bold text-blue-700 mb-2">💡 建議事項</p>
+                                    <p className="text-xs font-bold text-blue-700 mb-0.5">💡 AI 修約建議方向</p>
+                                    <p className="text-xs text-blue-400 mb-2 italic">供參考，需法務人員評估後決定</p>
                                     <ul className="space-y-1">
                                         {result.recommendations.map((r, i) => (
                                             <li key={i} className="text-xs text-blue-600 flex gap-1.5">

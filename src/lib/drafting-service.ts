@@ -1,8 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
-
-const cleanKey = (key: string | undefined) =>
-    (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+import { callOpenAI } from './openai-client';
 
 export type DocumentType =
     | 'NDA' | 'COOPERATION' | 'AMENDMENT' | 'TERMINATION'
@@ -71,10 +68,6 @@ const RISK_LABELS: Record<RiskPreference, string> = {
 const LETTER_TYPES = new Set<DocumentType>(['REPLY_LETTER', 'COMPANY_LETTER', 'FORMAL_LETTER', 'REGISTERED_LETTER']);
 
 export async function draftDocument(req: DraftRequest, apiKey?: string): Promise<DraftResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    const genAI = new GoogleGenerativeAI(effectiveKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
     const docLabel = DOC_TYPE_LABELS[req.documentType];
     const riskLabel = RISK_LABELS[req.riskPreference];
     const isLetter = LETTER_TYPES.has(req.documentType);
@@ -124,8 +117,7 @@ ${clauseFormat}
 
     try {
         await logSystemEvent('contract-draft', 'INFO', `起草開始：${req.documentType}`);
-        const response = await model.generateContent(prompt);
-        const raw = response.response.text();
+        const raw = await callOpenAI(prompt, apiKey, 16000);
         const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('AI 回應格式錯誤，請重試');
@@ -139,10 +131,6 @@ ${clauseFormat}
 }
 
 export async function rewriteClause(req: RewriteRequest, apiKey?: string): Promise<RewriteResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    const genAI = new GoogleGenerativeAI(effectiveKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
     const prompt = `你是資深法務律師，請依指示改寫以下合約條文，以繁體中文回應。
 
 條文標題：${req.clauseTitle}
@@ -159,8 +147,7 @@ ${req.originalContent}
 }`;
 
     try {
-        const response = await model.generateContent(prompt);
-        const raw = response.response.text();
+        const raw = await callOpenAI(prompt, apiKey, 4000);
         const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('AI 回應格式錯誤');

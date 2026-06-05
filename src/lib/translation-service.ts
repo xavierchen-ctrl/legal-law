@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
-
-const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+import { callOpenAI } from './openai-client';
 
 export interface LegalTerm {
     term: string;
@@ -86,16 +84,7 @@ export async function translateContractText(
     text: string,
     apiKey?: string
 ): Promise<TranslationResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-
-    if (!effectiveKey) {
-        throw new Error('Missing GEMINI_API_KEY');
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const prompt = `
 You are a senior legal translator specializing in Traditional Chinese (繁體中文) legal documents for Taiwanese companies.
 
@@ -154,14 +143,13 @@ The "ambiguities" array should be empty [] if the clause is unambiguous.
 The "legalTerms" array should list only notable legal terms, not every word.
 `;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 32000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('[TranslationService] Raw AI output length:', cleaned.length);
 
-        console.log('[TranslationService] Raw AI output length:', responseText.length);
-
-        const parsed = JSON.parse(responseText) as TranslationResult;
-        return parsed;
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(jsonMatch[0]) as TranslationResult;
 
     } catch (error: any) {
         console.error('[TranslationService] Failed:', error);
@@ -215,16 +203,7 @@ export async function translateChineseToEnglish(
     text: string,
     apiKey?: string
 ): Promise<ChToEnTranslationResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-
-    if (!effectiveKey) {
-        throw new Error('Missing GEMINI_API_KEY');
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const prompt = `
 You are a senior legal translator specializing in translating Traditional Chinese (繁體中文) contract clauses into English for international commercial use.
 
@@ -287,14 +266,13 @@ The "scopeWarnings" array should be [] if no scope shift was detected.
 The "legalTerms" array should list only notable legal terms requiring a translation judgment call.
 `;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 32000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('[TranslationService ZH→EN] Raw AI output length:', cleaned.length);
 
-        console.log('[TranslationService ZH→EN] Raw AI output length:', responseText.length);
-
-        const parsed = JSON.parse(responseText) as ChToEnTranslationResult;
-        return parsed;
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(jsonMatch[0]) as ChToEnTranslationResult;
 
     } catch (error: any) {
         console.error('[TranslationService ZH→EN] Failed:', error);
@@ -330,15 +308,9 @@ export async function translateGeneric(
     langPair: GenericLangPair,
     apiKey?: string
 ): Promise<GenericTranslationResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
-
     const meta = LANG_META[langPair];
 
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const prompt = `你是一位資深法律翻譯專家。
 
 ${meta.instruction}
@@ -354,11 +326,13 @@ ${text.substring(0, 28000)}
   "translatedText": "完整翻譯後的合約條款（${meta.to}）"
 }`;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 32000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
 
-        return JSON.parse(responseText) as GenericTranslationResult;
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(jsonMatch[0]) as GenericTranslationResult;
+
     } catch (error: any) {
         console.error(`[TranslationService ${langPair}] Failed:`, error);
         await logSystemEvent('TranslationService', 'ERROR', `${langPair} translation failed: ${error.message}`);

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
     try {
-        const apiKey = request.headers.get('x-gemini-api-key') || undefined;
+        const apiKey = request.headers.get('x-openai-api-key') || undefined;
 
         console.log(`[Manual Scan] Triggered. Custom Key Provided: ${!!apiKey}`);
         await logSystemEvent('Manual_Scan', 'INFO', `User triggered scan. Custom Key: ${!!apiKey}`);

@@ -1,9 +1,5 @@
-
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
-
-const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
-
+import { callOpenAI, getOpenAIClient, OPENAI_MODEL } from './openai-client';
 
 export interface AIRule {
     ruleName: string;
@@ -18,47 +14,29 @@ export interface AIAnalysisResult {
     reasoning: string;
 }
 
-/**
- * Validates connectivity to Gemini API
- */
-export async function testGeminiConnection(apiKey?: string): Promise<boolean> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    if (!effectiveKey) {
-        console.error('GEMINI_API_KEY is not set');
-        return false;
-    }
+export async function testAIConnection(apiKey?: string): Promise<boolean> {
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey as string);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-        const result = await model.generateContent('Say "Hello World" if you can hear me.');
-        const response = result.response;
-        const text = response.text();
-        console.log('Gemini Test Response:', text);
+        const client = getOpenAIClient(apiKey);
+        const response = await client.chat.completions.create({
+            model: OPENAI_MODEL,
+            max_tokens: 50,
+            messages: [{ role: 'user', content: 'Say "Hello World" if you can hear me.' }],
+        });
+        const text = response.choices[0]?.message?.content ?? '';
+        console.log('OpenAI Test Response:', text);
         return text.toLowerCase().includes('hello');
     } catch (error) {
-        console.error('Gemini Connection Failed:', error);
+        console.error('OpenAI Connection Failed:', error);
         return false;
     }
 }
 
-/**
- * Analyzes contract text against a set of rules
- */
+export { testAIConnection as testGeminiConnection };
+
 export async function analyzeContractWithAI(text: string, rules: AIRule[], apiKey?: string): Promise<AIAnalysisResult[]> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-
-    if (!effectiveKey) {
-        await logSystemEvent('AI_Service', 'ERROR', 'Missing GEMINI_API_KEY');
-        return [];
-    }
-
     if (rules.length === 0) return [];
 
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
-        // Construct Prompt
         const rulesText = rules.map((r, i) => `
         ID: ${i}
         Name: ${r.ruleName}
@@ -69,10 +47,10 @@ export async function analyzeContractWithAI(text: string, rules: AIRule[], apiKe
         const prompt = `
         You are a senior Legal AI Assistant for "潮網科技 (Wavenet)".
         Analyze the following contract text and check for violations of the specified rules.
-        
+
         Input Contract Text:
         """
-        ${text.substring(0, 5000)} 
+        ${text.substring(0, 5000)}
         """
         (Text truncated to first 5k chars for efficiency)
 
@@ -90,42 +68,17 @@ export async function analyzeContractWithAI(text: string, rules: AIRule[], apiKe
         ]
         `;
 
-        // ... Prompt Construction ...
+        const raw = await callOpenAI(prompt, apiKey, 8000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('🤖 AI Raw output:', cleaned.substring(0, 200));
 
-        let retryCount = 0;
-        const maxRetries = 3;
+        const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+        if (!arrayMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(arrayMatch[0]) as AIAnalysisResult[];
 
-        while (retryCount <= maxRetries) {
-            try {
-                const result = await model.generateContent(prompt);
-                const response = result.response;
-                let responseText = response.text();
-
-                // Clean markdown code blocks if present
-                responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-                console.log('🤖 AI Raw output:', responseText);
-
-                const analysis = JSON.parse(responseText) as AIAnalysisResult[];
-                return analysis;
-
-            } catch (error: any) {
-                if (error.message?.includes('429') || error.status === 429) {
-                    retryCount++;
-                    if (retryCount > maxRetries) throw error;
-                    const delay = Math.pow(2, retryCount) * 5000; // 10s, 20s, 40s
-                    console.log(`⚠️ 429 Too Many Requests. Retrying in ${delay / 1000}s... (Attempt ${retryCount}/${maxRetries})`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                } else {
-                    throw error; // Rethrow non-429 errors
-                }
-            }
-        }
-        return []; // Should not reach here
     } catch (error: any) {
         console.error('AI Analysis Failed:', error);
         await logSystemEvent('AI_Service', 'ERROR', `Analysis failed: ${error.message}`);
-
-        // Throw error to let caller know (especially for manual scans/quota limit)
         throw error;
     }
 }
@@ -138,20 +91,8 @@ export interface ArchitectureReviewItem {
     detail: string;
 }
 
-/**
- * Perform a 5-point architecture review of the contract text
- */
 export async function analyzeContractArchitecture(text: string, apiKey?: string): Promise<ArchitectureReviewItem[]> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-
-    if (!effectiveKey) {
-        throw new Error('Missing GEMINI_API_KEY');
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const prompt = `
         You are a senior Legal AI Assistant for a Taiwanese company.
         Please perform a comprehensive contract architecture review based on the provided contract text.
@@ -165,7 +106,7 @@ export async function analyzeContractArchitecture(text: string, apiKey?: string)
 
         Input Contract Text:
         """
-        ${text.substring(0, 30000)} // Deep review needs more context
+        ${text.substring(0, 30000)}
         """
 
         Output Format:
@@ -180,18 +121,79 @@ export async function analyzeContractArchitecture(text: string, apiKey?: string)
         }
         `;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 6000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('🤖 AI Architecture Review Raw output length:', cleaned.length);
 
-        console.log('🤖 AI Architecture Review Raw output:', responseText);
-
-        const analysis = JSON.parse(responseText) as ArchitectureReviewItem[];
-        return analysis;
+        const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+        if (!arrayMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(arrayMatch[0]) as ArchitectureReviewItem[];
 
     } catch (error: any) {
         console.error('AI Architecture Review Failed:', error);
         await logSystemEvent('AI_Service', 'ERROR', `Architecture Review failed: ${error.message}`);
+        throw error;
+    }
+}
+
+export interface DocumentInput {
+    label: string;
+    text: string;
+    version?: string;
+}
+
+export async function analyzeContractArchitectureMulti(
+    docs: DocumentInput[],
+    apiKey?: string
+): Promise<ArchitectureReviewItem[]> {
+    const isMulti = docs.length > 1;
+    const charPerDoc = Math.min(8000, Math.floor(40000 / docs.length));
+
+    const docsSection = docs.map((d, i) =>
+        `--- 文件 ${i + 1}：${d.label}${d.version ? `（${d.version}）` : ''} ---\n"""\n${d.text.substring(0, charPerDoc)}\n"""`
+    ).join('\n\n');
+
+    const criteriaList = `1. 基本交易條款完整性（標的、權利義務、付款條件）
+2. 風險分配條款（保密、責任、違約）
+3. 一般條款（準據法、爭議解決、終止）
+4. 條款前後一致性${isMulti ? '（含文件間交叉一致性）' : ''}
+5. 重要條款缺漏（責任限制、終止條款等）${isMulti ? `
+6. 文件間矛盾與衝突（主約與附件間的定義衝突、義務矛盾、付款條件不一致等）` : ''}`;
+
+    const itemCount = isMulti ? 6 : 5;
+
+    const prompt = `你是資深台灣法律顧問，專精合約架構審查。
+
+請針對以下${isMulti ? `合約文件套件（共 ${docs.length} 份文件）` : '合約文字'}進行完整架構檢視：
+${isMulti ? `\n文件清單：\n${docs.map((d, i) => `${i + 1}. ${d.label}${d.version ? `（${d.version}）` : ''}`).join('\n')}\n` : ''}
+${docsSection}
+
+請評估以下 ${itemCount} 項標準：
+${criteriaList}
+
+輸出格式：
+僅回傳純 JSON 陣列（不加 markdown code block），包含 ${itemCount} 個物件：
+[
+  {
+    "id": 1,
+    "category": "評估項目短標題（如：基本交易條款）",
+    "title": "評估項目完整描述",
+    "status": "PASS" | "WARN" | "FAIL",
+    "detail": "詳細說明（繁體中文）：發現什麼、缺少什麼、或矛盾在哪裡"
+  }
+]
+`;
+
+    try {
+        const raw = await callOpenAI(prompt, apiKey, 8000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('[ArchReviewMulti] Raw output length:', cleaned.length);
+        const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+        if (!arrayMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(arrayMatch[0]) as ArchitectureReviewItem[];
+    } catch (error: any) {
+        console.error('AI Architecture Multi Review Failed:', error);
+        await logSystemEvent('AI_Service', 'ERROR', `Architecture Multi Review failed: ${error.message}`);
         throw error;
     }
 }
@@ -229,13 +231,7 @@ export async function reviewContractNameAndPreamble(
     caseContext?: NamePreambleCaseContext,
     apiKey?: string
 ): Promise<NamePreambleReviewResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
-
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const contextSection = caseContext && (
             caseContext.businessBackground || caseContext.isCounterpartyTemplate !== undefined ||
             caseContext.hasNegotiationLeverage !== undefined || caseContext.departmentNotes
@@ -302,13 +298,13 @@ Return ONLY a raw JSON object (no markdown):
 }
 Return exactly 5 items in order.`;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 12000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('[NamePreambleReview] Raw AI output length:', cleaned.length);
 
-        console.log('[NamePreambleReview] Raw AI output length:', responseText.length);
-        const parsed = JSON.parse(responseText) as NamePreambleReviewResult;
-        return parsed;
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(jsonMatch[0]) as NamePreambleReviewResult;
 
     } catch (error: any) {
         console.error('Name & Preamble Review Failed:', error);
@@ -316,4 +312,3 @@ Return exactly 5 items in order.`;
         throw error;
     }
 }
-

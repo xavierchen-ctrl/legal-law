@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
-
-const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+import { callOpenAI } from './openai-client';
 
 export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export type DeviationType = 'UNFAVORABLE' | 'FAVORABLE' | 'NEUTRAL';
@@ -43,13 +41,7 @@ export async function analyzePaymentTerms(
     counterpartyType: 'existing' | 'new',
     apiKey?: string
 ): Promise<PaymentCheckResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
-
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const historicalSection = historicalTerms.trim()
             ? `\n\nHistorical Payment Terms (過往交易條件):\n"""\n${historicalTerms.substring(0, 3000)}\n"""`
             : '\n\nHistorical Payment Terms: Not provided (treat as new counterparty).';
@@ -128,13 +120,13 @@ The "deviations" array should be empty [] if no deviations found.
 All text fields must be in Traditional Chinese (繁體中文).
 `;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 8000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('[PaymentService] Raw AI output length:', cleaned.length);
 
-        console.log('[PaymentService] Raw AI output length:', responseText.length);
-        const parsed = JSON.parse(responseText) as PaymentCheckResult;
-        return parsed;
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(jsonMatch[0]) as PaymentCheckResult;
 
     } catch (error: any) {
         console.error('[PaymentService] Failed:', error);

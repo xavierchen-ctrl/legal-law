@@ -19,11 +19,15 @@ export async function GET(_req: Request, { params }: Params) {
     const { id } = await params;
     const contractNumber = decodeURIComponent(id);
 
-    const tracking = await prisma.contractTracking.findUnique({
-        where: { contractNumber },
-    });
-
-    return NextResponse.json(tracking);
+    try {
+        const tracking = await prisma.contractTracking.findUnique({
+            where: { contractNumber },
+        });
+        return NextResponse.json(tracking);
+    } catch (err) {
+        console.error('[tracking GET]', err);
+        return NextResponse.json(null);
+    }
 }
 
 export async function PATCH(request: Request, { params }: Params) {

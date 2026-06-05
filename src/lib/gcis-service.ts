@@ -175,7 +175,7 @@ function runChecks(inputName: string, inputNo: string, gcisData: GcisCompany | n
             title: '契約相對人主體確認',
             description: '確認契約相對人為實際交易主體，避免使用錯誤或關係企業名稱',
             status: 'UNKNOWN',
-            detail: '無法取得商工資料，建議人工確認相對人是否為實際交易主體。',
+            detail: '無法取得商工資料，建議由需求單位確認交易主體資訊是否正確。',
         });
     } else {
         checks.push({
@@ -183,7 +183,7 @@ function runChecks(inputName: string, inputNo: string, gcisData: GcisCompany | n
             title: '契約相對人主體確認',
             description: '確認契約相對人為實際交易主體，避免使用錯誤或關係企業名稱',
             status: 'WARN',
-            detail: `系統已從商工確認「${gcisData.Company_Name}」存在登記，但無法自動判斷是否為關係企業或子公司。建議法務人員人工確認實際交易主體是否正確。`,
+            detail: `系統已從商工確認「${gcisData.Company_Name}」存在登記，但無法自動判斷是否為關係企業或子公司。建議由需求單位確認交易主體資訊是否正確。`,
         });
     }
 

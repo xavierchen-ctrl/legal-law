@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logSystemEvent } from './logger';
-
-const cleanKey = (key: string | undefined) => (key || '').replace(/^﻿/, '').replace(/^["']|["']$/g, '').trim();
+import { callOpenAI } from './openai-client';
 
 export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export type RiskClassification = 'MUST_FIX' | 'ACCEPTABLE';
@@ -48,13 +46,7 @@ export async function generateContractReport(
     businessBackground: string,
     apiKey?: string
 ): Promise<ContractReportResult> {
-    const effectiveKey = cleanKey(apiKey || process.env.GEMINI_API_KEY);
-    if (!effectiveKey) throw new Error('Missing GEMINI_API_KEY');
-
     try {
-        const genAI = new GoogleGenerativeAI(effectiveKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-
         const reviewSection = reviewNotes.trim()
             ? `\n\nReview Notes / Previous Analysis (審閱結果與修訂建議):\n"""\n${reviewNotes.substring(0, 6000)}\n"""`
             : '';
@@ -130,13 +122,13 @@ Return ONLY a raw JSON object (no markdown). All text in Traditional Chinese (�
 }
 `;
 
-        const result = await model.generateContent(prompt);
-        let responseText = result.response.text();
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const raw = await callOpenAI(prompt, apiKey, 16000);
+        const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        console.log('[ReportService] Raw AI output length:', cleaned.length);
 
-        console.log('[ReportService] Raw AI output length:', responseText.length);
-        const parsed = JSON.parse(responseText) as ContractReportResult;
-        return parsed;
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 回應格式錯誤');
+        return JSON.parse(jsonMatch[0]) as ContractReportResult;
 
     } catch (error: any) {
         console.error('[ReportService] Failed:', error);

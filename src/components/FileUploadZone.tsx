@@ -42,11 +42,21 @@ export default function FileUploadZone({ onTextExtracted, onError, accentColor =
         setUploaded(null);
 
         try {
+            const fileMB = file.size / 1024 / 1024;
+            if (file.size > 4 * 1024 * 1024) {
+                throw new Error(`📁 檔案太大（${fileMB.toFixed(1)} MB），系統上限為 4 MB。請壓縮後再上傳，或直接複製貼上文字內容。`);
+            }
+
             const formData = new FormData();
             formData.append('file', file);
 
             const res = await fetch('/api/extract-text', { method: 'POST', body: formData });
-            const data = await res.json();
+            let data: any;
+            try {
+                data = await res.json();
+            } catch {
+                throw new Error('📁 檔案太大或格式不支援。系統上限為 4 MB，請壓縮後再試。');
+            }
 
             if (!res.ok) throw new Error(data.error ?? '檔案解析失敗');
 
@@ -110,6 +120,7 @@ export default function FileUploadZone({ onTextExtracted, onError, accentColor =
                     <span className="text-2xl">📂</span>
                     <p className="text-sm font-medium text-gray-600">點擊或拖曳檔案上傳</p>
                     <p className="text-xs text-gray-400">支援 PDF · DOCX · TXT</p>
+                    <p className="text-xs text-gray-400">上限 4 MB</p>
                 </div>
             )}
         </div>

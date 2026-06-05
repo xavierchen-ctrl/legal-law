@@ -67,7 +67,7 @@ export default function ManualScanButton() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(userKey ? { 'x-gemini-api-key': userKey } : {})
+                    ...(userKey ? { 'x-openai-api-key': userKey } : {})
                 }
             });
 
