@@ -160,8 +160,8 @@ const RISK_STYLES = {
 
 function ClauseCard({ clause, view }: { clause: ClauseDiff; view: 'diff' | 'side' }) {
     const [expanded, setExpanded] = useState(clause.impactLevel === 'HIGH' || clause.changeType !== 'UNCHANGED');
-    const cs = CHANGE_STYLES[clause.changeType];
-    const is = IMPACT_STYLES[clause.impactLevel];
+    const cs = CHANGE_STYLES[clause.changeType as keyof typeof CHANGE_STYLES] ?? CHANGE_STYLES['UNCHANGED'];
+    const is = IMPACT_STYLES[clause.impactLevel as keyof typeof IMPACT_STYLES] ?? IMPACT_STYLES['NONE'];
 
     return (
         <div className={`rounded-lg border ${cs.border} ${cs.bg} mb-2 overflow-hidden`}>

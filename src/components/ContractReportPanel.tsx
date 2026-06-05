@@ -36,8 +36,8 @@ const SIGNING_REC: Record<SigningRec, { label: string; icon: string; banner: str
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function RiskCard({ item }: { item: RiskItem }) {
-    const rl = RISK_LEVEL[item.level];
-    const cl = CLASSIFICATION[item.classification];
+    const rl = RISK_LEVEL[item.level as keyof typeof RISK_LEVEL] ?? RISK_LEVEL['MEDIUM'];
+    const cl = CLASSIFICATION[item.classification as keyof typeof CLASSIFICATION] ?? CLASSIFICATION['ACCEPTABLE'];
     return (
         <div className={`rounded-lg border ${rl.border} ${rl.bg} px-4 py-3 mb-2`}>
             <div className="flex items-center gap-2 mb-1.5 flex-wrap">

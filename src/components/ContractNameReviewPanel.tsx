@@ -32,8 +32,8 @@ const STATUS_CONFIG = {
 
 function ReviewItemCard({ item }: { item: NamePreambleReviewItem }) {
     const [showSuggestion, setShowSuggestion] = useState(item.status !== 'PASS');
-    const cfg = STATUS_CONFIG[item.status];
-    const ftCfg = FINDING_TYPE_CONFIG[item.findingType ?? (item.status === 'PASS' ? 'PASS' : 'GENERAL_RISK')];
+    const cfg = STATUS_CONFIG[item.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG['WARN'];
+    const ftCfg = FINDING_TYPE_CONFIG[item.findingType as keyof typeof FINDING_TYPE_CONFIG ?? (item.status === 'PASS' ? 'PASS' : 'GENERAL_RISK')] ?? FINDING_TYPE_CONFIG['GENERAL_RISK'];
 
     return (
         <div className={`rounded-lg border ${cfg.border} ${cfg.bg} mb-2 overflow-hidden`}>
