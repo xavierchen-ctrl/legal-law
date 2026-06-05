@@ -7,7 +7,13 @@ import ContractTimeline from '@/components/ContractTimeline';
 
 export default async function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
-    const contracts = await fetchContractsFromSheet();
+    let contracts;
+    try {
+        contracts = await fetchContractsFromSheet();
+    } catch (err) {
+        console.error('[ContractDetailPage] fetchContractsFromSheet failed:', err);
+        throw err;
+    }
     const contract = contracts.find(c => c.id === decodeURIComponent(id));
 
     if (!contract) return notFound();
