@@ -39,7 +39,8 @@ function toFriendlyError(err: any): Error {
 export async function callOpenAI(
     prompt: string,
     apiKey?: string,
-    maxTokens = 16000
+    maxTokens = 16000,
+    jsonMode = false
 ): Promise<string> {
     try {
         const client = getOpenAIClient(apiKey);
@@ -47,6 +48,7 @@ export async function callOpenAI(
             model: OPENAI_MODEL,
             max_tokens: maxTokens,
             messages: [{ role: 'user', content: prompt }],
+            ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         });
         return response.choices[0]?.message?.content ?? '';
     } catch (err: any) {

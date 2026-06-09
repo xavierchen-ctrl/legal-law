@@ -43,74 +43,89 @@ export async function compareContractVersions(
         const prompt = `
 You are a senior legal analyst specializing in contract version comparison for a Taiwanese company.
 
-Your task is to compare two versions of a contract and produce a COMPLETE diff analysis.
+Your task is to compare two versions of a contract and produce a COMPLETE diff analysis in JSON format.
 
-═══ COMPLETENESS REQUIREMENT (CRITICAL) ═══
-You MUST identify and process EVERY clause in BOTH versions. Do NOT skip any clause.
+═══ GRANULARITY REQUIREMENT (CRITICAL) ═══
+Compare at the FINEST possible level:
+- If a 條 (article) contains multiple 項 (items/paragraphs), treat each 項 as a SEPARATE entry when its content changed.
+- If only part of a sentence was deleted or added, you MUST quote the EXACT deleted/added phrase.
+- For MODIFIED entries: in oldText, wrap deleted phrases as 【刪除：「...」】; in newText, wrap added phrases as 【新增：「...」】 so reviewers can spot the exact change instantly.
+- Never summarize away specific wording changes. If "並應盡量避免影響既有已確認之廣告合作案件" was deleted, it MUST appear in oldText with 【刪除：「...」】 marking.
+
+═══ COMPLETENESS REQUIREMENT ═══
+You MUST identify EVERY change in BOTH versions. Do NOT skip any clause or item.
 Step 1: List ALL clause numbers/titles found in Version A.
 Step 2: List ALL clause numbers/titles found in Version B.
-Step 3: For each unique clause from either version, produce one entry in the output.
-If a clause appears in Version A but not Version B → changeType: "REMOVED"
-If a clause appears in Version B but not Version A → changeType: "ADDED"
-If a clause appears in both but text differs → changeType: "MODIFIED"
-If a clause appears in both and text is identical → changeType: "UNCHANGED"
-Do not merge or skip clauses. Every clause number must appear in the output.
+Step 3: For each unique clause or item from either version, produce one entry.
+- Version A only → changeType: "REMOVED"
+- Version B only → changeType: "ADDED"
+- Both, text differs → changeType: "MODIFIED"
+- Both, text identical → changeType: "UNCHANGED"
 
 Version A (舊版 / Old Version):
 """
-${versionA.substring(0, 13000)}
+${versionA.substring(0, 12000)}
 """
 
 Version B (新版 / New Version):
 """
-${versionB.substring(0, 13000)}
+${versionB.substring(0, 12000)}
 """
 ${reviewSection}
 
 ═══ ANALYSIS INSTRUCTIONS ═══
-- Match clauses by explicit clause number (第N條) first, then by title or semantic meaning.
-- For MODIFIED clauses: quote the specific changed text, then analyze legal effect.
-- "impactDescription": describe the factual change and its legal/commercial implication — clearly note this is AI analysis, not a legal opinion.
-- "affectedRights": list concrete rights/obligations of our party (甲方) impacted (in Traditional Chinese).
-- "impactLevel": HIGH = liability, payment, IP, termination, penalty; MEDIUM = procedural/timing; LOW = minor wording; NONE = unchanged.
-- "reviewComment": if historical review comments are provided and this clause was mentioned, summarize whether the concern was addressed. Otherwise null.
-- All text fields must be in Traditional Chinese (繁體中文).
+- Match clauses by explicit clause number (第N條/第N項) first, then by semantic meaning.
+- "oldText" / "newText": quote the ACTUAL clause/item text. For MODIFIED entries, use 【刪除：「...」】 and 【新增：「...」】 markers around the exact changed phrases.
+- "impactDescription": describe the factual change and its legal/commercial implication (AI analysis, not legal opinion).
+- "affectedRights": concrete rights/obligations of 甲方 impacted (Traditional Chinese).
+- "impactLevel": HIGH = liability/payment/IP/termination/penalty; MEDIUM = procedural/timing; LOW = minor wording; NONE = unchanged.
+- "reviewComment": if historical comments apply, note whether addressed. Otherwise null.
+- All text fields in Traditional Chinese (繁體中文).
 - Include UNCHANGED clauses ONLY if strategically important.
 
 ═══ OUTPUT FORMAT ═══
-Return ONLY a raw JSON object (no markdown):
+Return a JSON object:
 {
-    "summary": "2-3 sentence overall summary of the changes and risk direction in Traditional Chinese",
-    "overallRiskLevel": "HIGH" | "MEDIUM" | "LOW",
-    "totalChanges": <ADDED + REMOVED + MODIFIED count>,
-    "addedClauses": <count>,
-    "removedClauses": <count>,
-    "modifiedClauses": <count>,
-    "majorRisks": ["Risk description in Chinese"],
-    "recommendations": ["Amendment suggestion in Chinese"],
+    "summary": "2-3 sentence overall summary in Traditional Chinese",
+    "overallRiskLevel": "HIGH",
+    "totalChanges": 0,
+    "addedClauses": 0,
+    "removedClauses": 0,
+    "modifiedClauses": 0,
+    "majorRisks": ["risk description"],
+    "recommendations": ["suggestion"],
     "clauses": [
         {
             "id": 1,
-            "clauseTitle": "條款標題（如：第三條 付款條件）",
-            "changeType": "ADDED" | "REMOVED" | "MODIFIED" | "UNCHANGED",
-            "oldText": "Original clause text verbatim, or null if ADDED",
-            "newText": "New clause text verbatim, or null if REMOVED",
-            "impactLevel": "HIGH" | "MEDIUM" | "LOW" | "NONE",
-            "impactDescription": "AI分析：條文異動說明及對我方權利義務之影響推論（繁體中文）",
-            "affectedRights": ["具體受影響的權利或義務項目"],
-            "reviewComment": "審約意見追蹤說明，或 null"
+            "clauseTitle": "第X條第X項 標題",
+            "changeType": "MODIFIED",
+            "oldText": "舊版文字，含【刪除：「...」】標記",
+            "newText": "新版文字，含【新增：「...」】標記",
+            "impactLevel": "MEDIUM",
+            "impactDescription": "AI分析說明",
+            "affectedRights": ["受影響項目"],
+            "reviewComment": null
         }
     ]
 }
 `;
 
-        const raw = await callOpenAI(prompt, apiKey, 16000);
+        const raw = await callOpenAI(prompt, apiKey, 16000, true);
         const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
         console.log('[DiffService] Raw AI output length:', cleaned.length);
 
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('AI 回應格式錯誤');
-        return JSON.parse(jsonMatch[0]) as ContractDiffResult;
+
+        let parsed: ContractDiffResult;
+        try {
+            parsed = JSON.parse(jsonMatch[0]) as ContractDiffResult;
+        } catch {
+            // Fallback: strip trailing commas then retry
+            const repaired = jsonMatch[0].replace(/,(\s*[}\]])/g, '$1');
+            parsed = JSON.parse(repaired) as ContractDiffResult;
+        }
+        return parsed;
 
     } catch (error: any) {
         console.error('[DiffService] Failed:', error);
