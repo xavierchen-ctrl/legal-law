@@ -83,7 +83,7 @@ export async function fetchContractsFromSheet(): Promise<SheetContract[]> {
 
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetName}!A:Z`, // Fetch columns A to Z (should cover mostly everything)
+            range: `${sheetName}!A:AZ`, // Fetch columns A to AZ (52 columns, covers future expansion)
         });
 
         const rows = response.data.values;

@@ -3,7 +3,7 @@ import { callOpenAI } from './openai-client';
 
 export type ChangeType = 'ADDED' | 'REMOVED' | 'MODIFIED' | 'UNCHANGED';
 export type ImpactLevel = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
-export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
 
 export interface ClauseDiff {
     id: number;
@@ -45,6 +45,28 @@ You are a senior legal analyst specializing in contract version comparison for a
 
 Your task is to compare two versions of a contract and produce a COMPLETE diff analysis in JSON format.
 
+═══ WHAT TO IGNORE (NOT clause changes) ═══
+The following differences are NOT contract clause changes and must be IGNORED entirely:
+- Document title / file name changes (e.g. "合約V4" → "合約V5", filename in header).
+- Version numbers or dates appearing only in the document header or cover page.
+- Page numbers, whitespace, line breaks, or pure formatting differences.
+- Changes to the document's metadata section (封面、頁首、頁尾).
+
+═══ NO-CHANGE SCENARIO ═══
+If after ignoring the above, the two versions have IDENTICAL clause content, you MUST return:
+{
+    "summary": "兩版本條文內容完全相同，僅有檔案名稱或版本標示等非條文性差異，無任何條文實質變更。",
+    "overallRiskLevel": "NONE",
+    "totalChanges": 0,
+    "addedClauses": 0,
+    "removedClauses": 0,
+    "modifiedClauses": 0,
+    "majorRisks": [],
+    "recommendations": [],
+    "clauses": []
+}
+Do NOT fabricate clause differences. If only the filename or header changed, totalChanges MUST be 0.
+
 ═══ GRANULARITY REQUIREMENT (CRITICAL) ═══
 Compare at the FINEST possible level:
 - If a 條 (article) contains multiple 項 (items/paragraphs), treat each 項 as a SEPARATE entry when its content changed.
@@ -67,7 +89,7 @@ Version A (舊版 / Old Version):
 ${versionA.substring(0, 12000)}
 """
 
-Version B (新版 / New Version):
+Version B (新版 / New版):
 """
 ${versionB.substring(0, 12000)}
 """

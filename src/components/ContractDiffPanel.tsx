@@ -156,6 +156,7 @@ const RISK_STYLES = {
     HIGH:   { label: '高風險', banner: 'bg-red-50 border-red-300 text-red-700', icon: '🔴' },
     MEDIUM: { label: '中風險', banner: 'bg-amber-50 border-amber-300 text-amber-700', icon: '🟡' },
     LOW:    { label: '低風險', banner: 'bg-green-50 border-green-300 text-green-700', icon: '🟢' },
+    NONE:   { label: '無變更', banner: 'bg-gray-50 border-gray-300 text-gray-600', icon: '⚪' },
 };
 
 function ClauseCard({ clause, view }: { clause: ClauseDiff; view: 'diff' | 'side' }) {
@@ -351,7 +352,8 @@ export default function ContractDiffPanel() {
         filter === 'ALL' ? c.changeType !== 'UNCHANGED' : c.changeType === filter
     ) ?? [];
 
-    const rs = result ? RISK_STYLES[result.overallRiskLevel] : null;
+    const rs = result ? (RISK_STYLES[result.overallRiskLevel as keyof typeof RISK_STYLES] ?? RISK_STYLES['NONE']) : null;
+    const noChanges = result ? result.totalChanges === 0 : false;
 
     return (
         <div className="card p-6 space-y-4 shadow-sm border border-purple-100 bg-gradient-to-b from-white to-purple-50/20">
@@ -433,122 +435,139 @@ export default function ContractDiffPanel() {
             {/* Results */}
             {result && rs && (
                 <div className="space-y-3 pt-1">
-                    {/* Risk banner */}
-                    <div className={`rounded-lg px-4 py-3 border flex items-start gap-3 ${rs.banner}`}>
-                        <span className="text-xl mt-0.5">{rs.icon}</span>
-                        <div className="flex-1">
-                            <p className="text-sm font-bold">
-                                整體風險評估：{rs.label} ／ 共 {result.totalChanges} 處變動
-                                （新增 {result.addedClauses}、刪除 {result.removedClauses}、修改 {result.modifiedClauses}）
-                            </p>
-                            <p className="text-xs mt-0.5 leading-relaxed opacity-90">{result.summary}</p>
+                    {noChanges ? (
+                        /* ── No substantive changes ── */
+                        <div className="rounded-lg border border-gray-300 bg-gray-50 px-4 py-5 flex flex-col items-center gap-2 text-center">
+                            <span className="text-3xl">✅</span>
+                            <p className="text-sm font-bold text-gray-700">條文內容無實質變更</p>
+                            <p className="text-xs text-gray-500 leading-relaxed max-w-sm">{result.summary}</p>
+                            <div className="mt-1 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 leading-relaxed text-left max-w-sm">
+                                <p className="font-semibold mb-0.5">可能的差異類型（均不屬條文變更）</p>
+                                <ul className="space-y-0.5">
+                                    <li>• 檔案名稱或版本號異動（如 V4 → V5）</li>
+                                    <li>• 封面、頁首或頁尾內容調整</li>
+                                    <li>• 格式、排版或空白差異</li>
+                                </ul>
+                            </div>
                         </div>
-                        <button
-                            onClick={() => exportSummary(result)}
-                            className="shrink-0 text-xs px-2 py-1 rounded border border-current/30 hover:bg-white/50 transition-colors font-medium"
-                        >
-                            ↓ 匯出摘要
-                        </button>
-                    </div>
+                    ) : (
+                        <>
+                            {/* Risk banner */}
+                            <div className={`rounded-lg px-4 py-3 border flex items-start gap-3 ${rs.banner}`}>
+                                <span className="text-xl mt-0.5">{rs.icon}</span>
+                                <div className="flex-1">
+                                    <p className="text-sm font-bold">
+                                        整體風險評估：{rs.label} ／ 共 {result.totalChanges} 處變動
+                                        （新增 {result.addedClauses}、刪除 {result.removedClauses}、修改 {result.modifiedClauses}）
+                                    </p>
+                                    <p className="text-xs mt-0.5 leading-relaxed opacity-90">{result.summary}</p>
+                                </div>
+                                <button
+                                    onClick={() => exportSummary(result)}
+                                    className="shrink-0 text-xs px-2 py-1 rounded border border-current/30 hover:bg-white/50 transition-colors font-medium"
+                                >
+                                    ↓ 匯出摘要
+                                </button>
+                            </div>
 
-                    {/* AI 掃描覆蓋率說明 */}
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800 space-y-1 leading-relaxed">
-                        <div className="font-semibold">⚠️ AI 掃描範圍說明</div>
-                        <div>
-                            本次已識別 <span className="font-medium">{result.clauses.length}</span> 條條款，
-                            其中有變動 <span className="font-medium">{result.totalChanges}</span> 條。
-                        </div>
-                        <div>若原始文件條號不連續、格式特殊或條文過長，AI 可能未完整辨識所有條款。建議核對原始文件確認有無遺漏。</div>
-                        <div>畫面中標示「<span className="font-medium text-orange-600">💡 AI 延伸分析</span>」之內容為 AI 推論，<span className="font-medium">非正式法律意見</span>，不代表系統已完成完整法律風險判斷。</div>
-                    </div>
+                            {/* AI 掃描覆蓋率說明 */}
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800 space-y-1 leading-relaxed">
+                                <div className="font-semibold">⚠️ AI 掃描範圍說明</div>
+                                <div>
+                                    本次已識別 <span className="font-medium">{result.clauses.length}</span> 條條款，
+                                    其中有變動 <span className="font-medium">{result.totalChanges}</span> 條。
+                                </div>
+                                <div>若原始文件條號不連續、格式特殊或條文過長，AI 可能未完整辨識所有條款。建議核對原始文件確認有無遺漏。</div>
+                                <div>畫面中標示「<span className="font-medium text-orange-600">💡 AI 延伸分析</span>」之內容為 AI 推論，<span className="font-medium">非正式法律意見</span>，不代表系統已完成完整法律風險判斷。</div>
+                            </div>
 
-                    {/* Major risks & recommendations */}
-                    {(result.majorRisks.length > 0 || result.recommendations.length > 0) && (
-                        <div className="grid grid-cols-2 gap-3">
-                            {result.majorRisks.length > 0 && (
-                                <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                                    <p className="text-xs font-bold text-red-700 mb-0.5">⚠️ 主要風險</p>
-                                    <p className="text-xs text-red-400 mb-2 italic">AI 延伸推論，非已確認法律風險</p>
-                                    <ul className="space-y-1">
-                                        {result.majorRisks.map((r, i) => (
-                                            <li key={i} className="text-xs text-red-600 flex gap-1.5">
-                                                <span className="shrink-0 font-bold">{i + 1}.</span>
-                                                <span>{r}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
+                            {/* Major risks & recommendations */}
+                            {(result.majorRisks.length > 0 || result.recommendations.length > 0) && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {result.majorRisks.length > 0 && (
+                                        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                                            <p className="text-xs font-bold text-red-700 mb-0.5">⚠️ 主要風險</p>
+                                            <p className="text-xs text-red-400 mb-2 italic">AI 延伸推論，非已確認法律風險</p>
+                                            <ul className="space-y-1">
+                                                {result.majorRisks.map((r, i) => (
+                                                    <li key={i} className="text-xs text-red-600 flex gap-1.5">
+                                                        <span className="shrink-0 font-bold">{i + 1}.</span>
+                                                        <span>{r}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {result.recommendations.length > 0 && (
+                                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                                            <p className="text-xs font-bold text-blue-700 mb-0.5">💡 AI 修約建議方向</p>
+                                            <p className="text-xs text-blue-400 mb-2 italic">供參考，需法務人員評估後決定</p>
+                                            <ul className="space-y-1">
+                                                {result.recommendations.map((r, i) => (
+                                                    <li key={i} className="text-xs text-blue-600 flex gap-1.5">
+                                                        <span className="shrink-0 font-bold">{i + 1}.</span>
+                                                        <span>{r}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                             )}
-                            {result.recommendations.length > 0 && (
-                                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                                    <p className="text-xs font-bold text-blue-700 mb-0.5">💡 AI 修約建議方向</p>
-                                    <p className="text-xs text-blue-400 mb-2 italic">供參考，需法務人員評估後決定</p>
-                                    <ul className="space-y-1">
-                                        {result.recommendations.map((r, i) => (
-                                            <li key={i} className="text-xs text-blue-600 flex gap-1.5">
-                                                <span className="shrink-0 font-bold">{i + 1}.</span>
-                                                <span>{r}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-                    )}
 
-                    {/* Toolbar */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {/* View toggle */}
-                        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
-                            <button
-                                onClick={() => setView('side')}
-                                className={`px-3 py-1.5 transition-colors ${view === 'side' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                            >
-                                並列視窗
-                            </button>
-                            <button
-                                onClick={() => setView('diff')}
-                                className={`px-3 py-1.5 transition-colors ${view === 'diff' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                            >
-                                差異標示
-                            </button>
-                        </div>
-
-                        {/* Filter */}
-                        <div className="flex gap-1.5 flex-wrap">
-                            {(['ALL', 'MODIFIED', 'ADDED', 'REMOVED'] as const).map(f => {
-                                const count = f === 'ALL'
-                                    ? result.totalChanges
-                                    : result.clauses.filter(c => c.changeType === f).length;
-                                const active = filter === f;
-                                const style = f === 'ALL' ? 'bg-gray-700 text-white' :
-                                    f === 'ADDED' ? 'bg-green-600 text-white' :
-                                    f === 'REMOVED' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white';
-                                return (
+                            {/* Toolbar */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
                                     <button
-                                        key={f}
-                                        onClick={() => setFilter(f)}
-                                        className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
-                                            active ? style : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                                        }`}
+                                        onClick={() => setView('side')}
+                                        className={`px-3 py-1.5 transition-colors ${view === 'side' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                     >
-                                        {f === 'ALL' ? '全部' : CHANGE_STYLES[f].label} ({count})
+                                        並列視窗
                                     </button>
-                                );
-                            })}
-                        </div>
-                    </div>
+                                    <button
+                                        onClick={() => setView('diff')}
+                                        className={`px-3 py-1.5 transition-colors ${view === 'diff' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                    >
+                                        差異標示
+                                    </button>
+                                </div>
 
-                    {/* Clause cards */}
-                    <div className="max-h-[700px] overflow-y-auto pr-1 custom-scrollbar-diff">
-                        {filteredClauses.length === 0 ? (
-                            <p className="text-xs text-center text-gray-400 py-6">無符合篩選條件的條款</p>
-                        ) : (
-                            filteredClauses.map(clause => (
-                                <ClauseCard key={clause.id} clause={clause} view={view} />
-                            ))
-                        )}
-                    </div>
+                                <div className="flex gap-1.5 flex-wrap">
+                                    {(['ALL', 'MODIFIED', 'ADDED', 'REMOVED'] as const).map(f => {
+                                        const count = f === 'ALL'
+                                            ? result.totalChanges
+                                            : result.clauses.filter(c => c.changeType === f).length;
+                                        const active = filter === f;
+                                        const style = f === 'ALL' ? 'bg-gray-700 text-white' :
+                                            f === 'ADDED' ? 'bg-green-600 text-white' :
+                                            f === 'REMOVED' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white';
+                                        return (
+                                            <button
+                                                key={f}
+                                                onClick={() => setFilter(f)}
+                                                className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
+                                                    active ? style : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {f === 'ALL' ? '全部' : CHANGE_STYLES[f].label} ({count})
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Clause cards */}
+                            <div className="max-h-[700px] overflow-y-auto pr-1 custom-scrollbar-diff">
+                                {filteredClauses.length === 0 ? (
+                                    <p className="text-xs text-center text-gray-400 py-6">無符合篩選條件的條款</p>
+                                ) : (
+                                    filteredClauses.map(clause => (
+                                        <ClauseCard key={clause.id} clause={clause} view={view} />
+                                    ))
+                                )}
+                            </div>
+                        </>
+                    )}
 
                     <style jsx>{`
                         .custom-scrollbar-diff::-webkit-scrollbar { width: 6px; }

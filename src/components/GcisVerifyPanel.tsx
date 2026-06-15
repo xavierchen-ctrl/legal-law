@@ -69,8 +69,8 @@ export default function GcisVerifyPanel({ companyName, businessNo: initialBusine
     };
 
     const handleVerify = async () => {
-        if (!companyName && !businessNo) {
-            setError('請填入公司名稱或統一編號');
+        if (!businessNo.trim()) {
+            setError('請填入統一編號（8碼數字）');
             return;
         }
         setLoading(true);
@@ -130,9 +130,8 @@ export default function GcisVerifyPanel({ companyName, businessNo: initialBusine
             {/* 查詢邏輯說明 */}
             <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 text-xs text-blue-700 leading-relaxed space-y-1">
                 <div className="font-semibold mb-1">📌 查詢邏輯說明</div>
-                <div>• <span className="font-medium">公司名稱</span>與<span className="font-medium">統一編號</span>可擇一查詢，亦可同時輸入（同時輸入精確度較高）。</div>
-                <div>• 填入統一編號時，系統優先以統一編號查詢；未填統一編號時，以公司名稱搜尋。</div>
-                <div>• 若公司名稱查無資料，建議手動輸入統一編號後再次查詢。</div>
+                <div>• <span className="font-medium">統一編號（必填）</span>：系統以統一編號查詢商工登記資料，確保比對準確。</div>
+                <div>• 若查無資料，請確認統一編號是否正確，或改至財政部稅籍查詢（獨資商號、行號適用）。</div>
             </div>
 
             {/* Company Name display */}
@@ -147,7 +146,8 @@ export default function GcisVerifyPanel({ companyName, businessNo: initialBusine
             <div>
                 <label className="text-xs text-gray-500 block mb-1">
                     統一編號
-                    <span className="ml-1 text-gray-400">（選填，8碼數字）</span>
+                    <span className="ml-1 text-red-500 font-medium">*</span>
+                    <span className="ml-1 text-gray-400">（必填，8碼數字）</span>
                 </label>
                 <input
                     type="text"
@@ -177,7 +177,7 @@ export default function GcisVerifyPanel({ companyName, businessNo: initialBusine
             <button
                 id="gcis-verify-btn"
                 onClick={handleVerify}
-                disabled={loading || (!companyName && !businessNo)}
+                disabled={loading || !businessNo.trim()}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all duration-200
                     bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700
                     disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"

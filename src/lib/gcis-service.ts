@@ -216,9 +216,7 @@ export async function verifyCompanyWithGcis(
     businessNo?: string
 ): Promise<GcisVerifyResult> {
     const queriedAt = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-    const gcisLink = businessNo
-        ? `https://findbiz.nat.gov.tw/fts/query/QueryList/queryList.do?qryCond=${businessNo}&searchType=1&cmpyType=01`
-        : `https://findbiz.nat.gov.tw/fts/query/QueryList/queryList.do?qryCond=${encodeURIComponent(companyName)}&searchType=1&cmpyType=01`;
+    const gcisLink = 'https://findbiz.nat.gov.tw/fts/query/QueryBar/queryInit.do';
 
     let companyData: GcisCompany | null = null;
 
