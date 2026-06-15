@@ -5,6 +5,7 @@ import ContractsTable, { EnrichedContract } from '@/components/ContractsTable';
 import FilterBar from '@/components/FilterBar';
 import ManualScanButton from '@/components/ManualScanButton';
 import { parseSheetDate } from '@/lib/date-utils';
+import GcisModalButton from '@/components/GcisModalButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -201,7 +202,8 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
             )}
           </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 items-center">
+          <GcisModalButton />
           <Link href="/api/notification/check-overdue" target="_blank" className="btn" style={{ background: 'var(--secondary)', color: 'var(--secondary-foreground)' }}>
             檢查逾期 (手動觸發)
           </Link>
