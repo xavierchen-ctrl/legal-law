@@ -1,7 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import type { PaymentCheckResult, PaymentDeviation, RiskLevel, Recommendation } from '@/lib/payment-service';
+import type {
+    PaymentCheckResult,
+    PaymentDeviation,
+    RiskLevel,
+    Recommendation,
+    ExtractionSource,
+    OurRole,
+    ReferenceSourceType,
+    ResolvedRole,
+} from '@/lib/payment-service';
 import LoadingModal from './LoadingModal';
 import FileUploadZone from './FileUploadZone';
 
@@ -31,8 +40,50 @@ const DEV_STYLE: Record<string, { label: string; color: string; bg: string }> = 
     NEUTRAL:     { label: '中性', color: 'text-gray-600',  bg: 'bg-gray-50' },
 };
 
+const REF_SOURCE_LABEL: Record<ReferenceSourceType, { label: string; icon: string; color: string }> = {
+    USER_HISTORICAL: { label: '使用者提供之過往條件', icon: '📋', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+    COMPANY_POLICY:  { label: '使用者提供之公司政策', icon: '📑', color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
+    AI_ESTIMATE:     { label: 'AI 推估（無外部資料）', icon: '🤖', color: 'text-orange-600 bg-orange-50 border-orange-200' },
+    NONE:            { label: '無對應參考', icon: '—', color: 'text-gray-500 bg-gray-50 border-gray-200' },
+};
+
+const ROLE_LABEL: Record<ResolvedRole, { label: string; icon: string; color: string }> = {
+    COLLECTOR: { label: '我方為收款方', icon: '💰', color: 'text-green-700 bg-green-50 border-green-200' },
+    PAYER:     { label: '我方為付款方', icon: '💸', color: 'text-blue-700 bg-blue-50 border-blue-200' },
+    UNCLEAR:   { label: '角色不明確',   icon: '❓', color: 'text-gray-600 bg-gray-50 border-gray-200' },
+};
+
+function SourceBadge({ src }: { src: ExtractionSource }) {
+    const [open, setOpen] = useState(false);
+    if (src.sourceType === 'NOT_FOUND') {
+        return <span className="text-xs px-1.5 py-0.5 rounded border border-gray-200 bg-gray-100 text-gray-500 font-normal">合約未約定</span>;
+    }
+    const isQuote = src.sourceType === 'CONTRACT_QUOTE' && src.sourceQuote;
+    const badge = src.sourceType === 'CONTRACT_QUOTE'
+        ? { icon: '📌', label: src.sourceNote || '條文引述', color: 'text-green-700 bg-green-50 border-green-200' }
+        : { icon: '🔗', label: src.sourceNote || '條文推論', color: 'text-amber-700 bg-amber-50 border-amber-200' };
+    return (
+        <div className="inline-block">
+            <button
+                onClick={() => isQuote && setOpen(v => !v)}
+                disabled={!isQuote}
+                className={`text-xs px-1.5 py-0.5 rounded border font-medium ${badge.color} ${isQuote ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
+                title={isQuote ? '點擊展開條文引述' : ''}
+            >
+                {badge.icon} {badge.label}{isQuote && <span className="ml-1">{open ? '▲' : '▼'}</span>}
+            </button>
+            {open && isQuote && (
+                <div className="mt-1 rounded border border-green-200 bg-white px-2 py-1.5 text-xs text-gray-700 leading-relaxed max-w-md">
+                    「{src.sourceQuote}」
+                </div>
+            )}
+        </div>
+    );
+}
+
 function DeviationRow({ d }: { d: PaymentDeviation }) {
     const ds = DEV_STYLE[d.deviationType] ?? DEV_STYLE.NEUTRAL;
+    const refSrc = REF_SOURCE_LABEL[d.referenceSourceType] ?? REF_SOURCE_LABEL.NONE;
     return (
         <div className={`rounded-lg border border-gray-200 ${ds.bg} px-4 py-3 mb-2`}>
             <div className="flex items-center gap-2 mb-1.5">
@@ -45,10 +96,21 @@ function DeviationRow({ d }: { d: PaymentDeviation }) {
                 <div className="bg-white rounded p-2 border border-gray-200">
                     <p className="text-xs text-gray-400 mb-0.5">合約條件</p>
                     <p className="text-xs font-medium text-gray-800">{d.currentValue}</p>
+                    {d.currentValueSource && (
+                        <p className="text-xs text-gray-400 mt-0.5">📌 來源：{d.currentValueSource}</p>
+                    )}
                 </div>
                 <div className="bg-white rounded p-2 border border-gray-200">
                     <p className="text-xs text-gray-400 mb-0.5">參考條件</p>
                     <p className="text-xs font-medium text-gray-800">{d.referenceValue}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                        <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${refSrc.color}`}>
+                            {refSrc.icon} {refSrc.label}
+                        </span>
+                    </div>
+                    {d.referenceSourceNote && (
+                        <p className="text-xs text-gray-500 mt-1 italic leading-relaxed">{d.referenceSourceNote}</p>
+                    )}
                 </div>
             </div>
             <p className={`text-xs ${ds.color} leading-relaxed`}>{d.riskDescription}</p>
@@ -65,6 +127,7 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
     const [companyPolicy, setCompanyPolicy] = useState('');
     const [transactionBackground, setTransactionBackground] = useState('');
     const [counterpartyType, setCounterpartyType] = useState<'existing' | 'new'>('new');
+    const [ourRole, setOurRole] = useState<OurRole>('AUTO');
     const [showAdvanced, setShowAdvanced] = useState(false);
 
     const [loading, setLoading] = useState(false);
@@ -86,7 +149,7 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
 
         try {
             const textToSend = mode === 'text' ? rawText : uploadedText;
-            const body = { rawText: textToSend, historicalTerms, companyPolicy, transactionBackground, counterpartyType };
+            const body = { rawText: textToSend, historicalTerms, companyPolicy, transactionBackground, counterpartyType, ourRole };
 
             const res = await fetch('/api/payment-check', {
                 method: 'POST',
@@ -154,7 +217,7 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
             </p>
 
             {/* Counterparty type */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
                 <p className="text-xs font-semibold text-gray-600">相對人類型</p>
                 <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
                     <button
@@ -170,6 +233,32 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
                         新客戶/廠商
                     </button>
                 </div>
+            </div>
+
+            {/* Our role (影響風險方向) */}
+            <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs font-semibold text-gray-600">
+                    我方角色
+                    <span className="ml-1 font-normal text-gray-400">（影響風險方向判讀）</span>
+                </p>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+                    {([
+                        { v: 'AUTO',      label: '🤖 AI 自動判斷' },
+                        { v: 'COLLECTOR', label: '💰 我方為收款方' },
+                        { v: 'PAYER',     label: '💸 我方為付款方' },
+                    ] as { v: OurRole; label: string }[]).map(opt => (
+                        <button
+                            key={opt.v}
+                            onClick={() => setOurRole(opt.v)}
+                            className={`px-3 py-1.5 transition-colors ${ourRole === opt.v ? 'bg-cyan-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="text-xs text-gray-500 leading-relaxed bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                💡 收款方：期限縮短／預付提高為「有利」；付款方則相反。若選 AI 自動判斷，系統會嘗試從合約文字判讀，但建議在角色明確時直接指定，避免風險方向誤判。
             </div>
 
             {/* Input mode */}
@@ -204,6 +293,11 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
                         onError={msg => setUploadError(msg)}
                     />
                     {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 leading-relaxed">
+                        ⚠️ <span className="font-medium">PDF／Word 解析差異提醒：</span>
+                        PDF 與 Word 之文字擷取邏輯不同（特別是表格、特殊符號、排版），可能導致 AI 判讀結果不一致。
+                        若同一份內容兩版本結果差異明顯，請以「貼上文字」模式重新比對，或改用條文最完整的版本。
+                    </div>
                 </>
             )}
 
@@ -308,20 +402,46 @@ export default function PaymentCheckPanel({ documentName, contractNumber, counte
                         </div>
                     </div>
 
-                    {/* Extracted terms */}
-                    <div className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-3">
-                        <p className="text-xs font-bold text-cyan-700 mb-2">📋 擷取之付款條件</p>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                            <div className="flex gap-2"><span className="text-gray-400 shrink-0">付款期間</span><span className="font-medium text-gray-800">{result.extractedTerms.paymentPeriod}</span></div>
-                            <div className="flex gap-2"><span className="text-gray-400 shrink-0">付款方式</span><span className="font-medium text-gray-800">{result.extractedTerms.paymentMethod}</span></div>
-                            <div className="flex gap-2"><span className="text-gray-400 shrink-0">幣別</span><span className="font-medium text-gray-800">{result.extractedTerms.currency}</span></div>
-                            <div className="flex gap-2"><span className="text-gray-400 shrink-0">逾期罰息</span><span className="font-medium text-gray-800">{result.extractedTerms.latePaymentPenalty ?? '未約定'}</span></div>
-                            {result.extractedTerms.paymentMilestones.length > 0 && (
-                                <div className="flex gap-2 col-span-2">
-                                    <span className="text-gray-400 shrink-0">付款里程碑</span>
-                                    <span className="font-medium text-gray-800">{result.extractedTerms.paymentMilestones.join('　')}</span>
+                    {/* Resolved role + methodology */}
+                    {(() => {
+                        const role = ROLE_LABEL[result.resolvedRole] ?? ROLE_LABEL.UNCLEAR;
+                        return (
+                            <div className={`rounded-lg border px-3 py-2.5 ${role.color}`}>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-base">{role.icon}</span>
+                                    <span className="text-xs font-bold">本次採用角色：{role.label}</span>
                                 </div>
-                            )}
+                                {result.roleResolution && (
+                                    <p className="text-xs mt-1 leading-relaxed opacity-90">判斷依據：{result.roleResolution}</p>
+                                )}
+                                {result.methodologyNote && (
+                                    <p className="text-xs mt-1 leading-relaxed opacity-80 italic">📐 方法論：{result.methodologyNote}</p>
+                                )}
+                            </div>
+                        );
+                    })()}
+
+                    {/* Extracted terms with sources */}
+                    <div className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-3">
+                        <p className="text-xs font-bold text-cyan-700 mb-2">📋 擷取之付款條件（含來源）</p>
+                        <div className="space-y-2 text-xs">
+                            {[
+                                { key: 'paymentPeriod' as const, label: '付款期間', val: result.extractedTerms.paymentPeriod },
+                                { key: 'paymentMethod' as const, label: '付款方式', val: result.extractedTerms.paymentMethod },
+                                { key: 'paymentMilestones' as const, label: '付款里程碑', val: result.extractedTerms.paymentMilestones.length > 0 ? result.extractedTerms.paymentMilestones.join('　') : '未約定' },
+                                { key: 'latePaymentPenalty' as const, label: '逾期罰息', val: result.extractedTerms.latePaymentPenalty ?? '未約定' },
+                                { key: 'currency' as const, label: '幣別', val: result.extractedTerms.currency },
+                            ].map(row => (
+                                <div key={row.key} className="flex gap-2 items-start">
+                                    <span className="text-gray-400 shrink-0 w-20">{row.label}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <span className="font-medium text-gray-800">{row.val}</span>
+                                        <div className="mt-0.5">
+                                            <SourceBadge src={result.extractionSources[row.key]} />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
 

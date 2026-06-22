@@ -35,13 +35,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '缺少分析結果。' }, { status: 400 });
         }
 
+        const refSourceLabel = (t: string) => ({
+            USER_HISTORICAL: '使用者提供之過往條件',
+            COMPANY_POLICY:  '使用者提供之公司政策',
+            AI_ESTIMATE:     'AI 一般商業常識推估（無外部資料）',
+            NONE:            '無對應參考',
+        } as Record<string, string>)[t] ?? '—';
+
         const deviationRows = result.deviations.length > 0
             ? result.deviations.map(d => `
-                <tr style="background:${d.deviationType === 'UNFAVORABLE' ? '#fff1f0' : '#f6ffed'}">
+                <tr style="background:${d.deviationType === 'UNFAVORABLE' ? '#fff1f0' : d.deviationType === 'FAVORABLE' ? '#f6ffed' : '#f9fafb'}">
                     <td style="padding:6px 10px;border:1px solid #e5e7eb">${d.field}</td>
-                    <td style="padding:6px 10px;border:1px solid #e5e7eb">${d.currentValue}</td>
-                    <td style="padding:6px 10px;border:1px solid #e5e7eb">${d.referenceValue}</td>
-                    <td style="padding:6px 10px;border:1px solid #e5e7eb;color:${d.deviationType === 'UNFAVORABLE' ? '#dc2626' : '#16a34a'}">${d.riskDescription}</td>
+                    <td style="padding:6px 10px;border:1px solid #e5e7eb">${d.currentValue}${d.currentValueSource ? `<br/><span style='color:#9ca3af;font-size:11px'>來源：${d.currentValueSource}</span>` : ''}</td>
+                    <td style="padding:6px 10px;border:1px solid #e5e7eb">${d.referenceValue}<br/><span style='color:#9ca3af;font-size:11px'>來源：${refSourceLabel(d.referenceSourceType)}${d.referenceSourceNote ? ` — ${d.referenceSourceNote}` : ''}</span></td>
+                    <td style="padding:6px 10px;border:1px solid #e5e7eb;color:${d.deviationType === 'UNFAVORABLE' ? '#dc2626' : d.deviationType === 'FAVORABLE' ? '#16a34a' : '#6b7280'}">${d.riskDescription}</td>
                 </tr>`).join('')
             : '<tr><td colspan="4" style="padding:8px;text-align:center;color:#6b7280">無異常差異</td></tr>';
 

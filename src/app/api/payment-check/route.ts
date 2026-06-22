@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from 'next/server';
 import { listFiles, downloadFile, findFileByDocumentName } from '@/lib/drive-service';
-import { analyzePaymentTerms } from '@/lib/payment-service';
+import { analyzePaymentTerms, OurRole } from '@/lib/payment-service';
 import { extractTextFromPdf } from '@/lib/pdf-helper';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +16,7 @@ export async function POST(request: Request) {
             companyPolicy = '',
             transactionBackground = '',
             counterpartyType = 'new',
+            ourRole = 'AUTO',
         } = body;
 
         let contractText = '';
@@ -54,12 +55,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '合約內容過短。' }, { status: 400 });
         }
 
+        const validRoles: OurRole[] = ['COLLECTOR', 'PAYER', 'AUTO'];
+        const resolvedOurRole: OurRole = validRoles.includes(ourRole as OurRole) ? (ourRole as OurRole) : 'AUTO';
+
         const result = await analyzePaymentTerms(
             contractText,
             historicalTerms,
             companyPolicy,
             transactionBackground,
-            counterpartyType
+            counterpartyType,
+            resolvedOurRole
         );
 
         return NextResponse.json({ success: true, result });
