@@ -1,8 +1,21 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import type { ArchitectureReviewItem } from '@/lib/ai-service';
+import type { ArchitectureReviewItem, ArchitectureReviewResult } from '@/lib/ai-service';
 import LoadingModal from './LoadingModal';
+
+const CONTRACT_TYPE_OPTIONS = [
+    { value: 'AUTO', label: '🤖 由 AI 自動判斷' },
+    { value: '勞動／聘僱契約', label: '勞動／聘僱契約' },
+    { value: '委任契約', label: '委任契約' },
+    { value: '承攬契約', label: '承攬契約' },
+    { value: '買賣契約', label: '買賣契約' },
+    { value: '租賃契約', label: '租賃契約' },
+    { value: '保密契約（NDA）', label: '保密契約（NDA）' },
+    { value: '授權契約', label: '授權契約' },
+    { value: '商務合作／服務委外契約', label: '商務合作／服務委外契約' },
+    { value: '其他', label: '其他' },
+];
 
 interface Props {
     documentName: string;
@@ -183,9 +196,15 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
         { id: 1, label: '主約（主合約）', version: '', inputMode: 'file', text: '', status: 'idle', error: null, fileName: null, charCount: 0 },
     ]);
     const [loading, setLoading] = useState(false);
-    const [results, setResults] = useState<ArchitectureReviewItem[] | null>(null);
+    const [result, setResult] = useState<ArchitectureReviewResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [analyzedManifest, setAnalyzedManifest] = useState<{ label: string; version: string | null; fileName: string; charCount: number; source: string }[] | null>(null);
+
+    // 案件背景與法務關注事項（選填）
+    const [showContext, setShowContext] = useState(false);
+    const [contractTypeHint, setContractTypeHint] = useState<string>('AUTO');
+    const [businessBackground, setBusinessBackground] = useState('');
+    const [legalFocus, setLegalFocus] = useState('');
 
     const updateDoc = (id: number, patch: Partial<DocEntry>) => {
         setDocs(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
@@ -215,7 +234,7 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
 
         setLoading(true);
         setError(null);
-        setResults(null);
+        setResult(null);
         setAnalyzedManifest(null);
 
         try {
@@ -224,14 +243,19 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
                 version: d.version || undefined,
                 text: d.text,
             }));
+            const caseContext = {
+                contractTypeHint: contractTypeHint && contractTypeHint !== 'AUTO' ? contractTypeHint : undefined,
+                businessBackground: businessBackground.trim() || undefined,
+                legalFocus: legalFocus.trim() || undefined,
+            };
             const res = await fetch('/api/architecture-review', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ documents: payload }),
+                body: JSON.stringify({ documents: payload, caseContext }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error ?? '分析失敗');
-            setResults(data.results);
+            setResult(data.results);
             setAnalyzedManifest(
                 readyDocs.map(d => ({
                     label: d.label,
@@ -248,8 +272,9 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
         }
     };
 
-    const failCount = results?.filter(c => c.status === 'FAIL').length ?? 0;
-    const warnCount = results?.filter(c => c.status === 'WARN').length ?? 0;
+    const items = result?.items ?? [];
+    const failCount = items.filter(c => c.status === 'FAIL').length;
+    const warnCount = items.filter(c => c.status === 'WARN').length;
 
     return (
         <div className="card p-6 space-y-4 shadow-sm border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/30">
@@ -298,6 +323,61 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
                 )}
             </div>
 
+            {/* 案件背景與法務關注事項（選填） */}
+            <div className="border border-indigo-100 rounded-lg bg-white/60">
+                <button
+                    onClick={() => setShowContext(v => !v)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50/50 transition-colors rounded-lg"
+                >
+                    <span className="flex items-center gap-2">
+                        <span>📝</span>
+                        案件背景與法務關注事項
+                        <span className="text-xs text-gray-400 font-normal">（選填，可提升分析準確度）</span>
+                    </span>
+                    <span className="text-xs text-indigo-400">{showContext ? '▼' : '▶'}</span>
+                </button>
+                {showContext && (
+                    <div className="px-4 pb-3 space-y-3 border-t border-indigo-100">
+                        <div className="pt-3">
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">契約類型</label>
+                            <select
+                                value={contractTypeHint}
+                                onChange={e => setContractTypeHint(e.target.value)}
+                                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                            >
+                                {CONTRACT_TYPE_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-gray-400 mt-1">指定後系統會以該類型框架分析；勞動契約不會強求商務型責任上限條款。</p>
+                        </div>
+                        <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">案件背景／交易目的</label>
+                            <textarea
+                                value={businessBackground}
+                                onChange={e => setBusinessBackground(e.target.value)}
+                                placeholder="例：本案聘僱身心障礙者，目的在達成法定定額進用名額認列..."
+                                rows={2}
+                                maxLength={500}
+                                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-y focus:outline-none focus:ring-1 focus:ring-indigo-300 text-gray-800 placeholder-gray-400"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">法務關注重點</label>
+                            <textarea
+                                value={legalFocus}
+                                onChange={e => setLegalFocus(e.target.value)}
+                                placeholder="例：1. 資格維持與親自履行勞務 2. 主管機關認列與裁罰風險 3. 競業禁止..."
+                                rows={2}
+                                maxLength={500}
+                                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-y focus:outline-none focus:ring-1 focus:ring-indigo-300 text-gray-800 placeholder-gray-400"
+                            />
+                            <p className="text-xs text-gray-400 mt-1">AI 會將此議題納入分析重點，於相關項目中具體回應。</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             {/* Run button */}
             <button
                 id="architecture-review-btn"
@@ -327,7 +407,7 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
             )}
 
             {/* Analyzed manifest */}
-            {analyzedManifest && results && (
+            {analyzedManifest && result && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-xs text-gray-700 space-y-1.5">
                     <div className="font-semibold text-gray-600">📋 本次分析涵蓋文件清單</div>
                     {analyzedManifest.map((m, i) => (
@@ -344,8 +424,29 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
             )}
 
             {/* Results */}
-            {results && results.length > 0 && (
+            {result && items.length > 0 && (
                 <div className="space-y-3 pt-1">
+                    {/* Contract type banner */}
+                    {result.contractType && (
+                        <div className="rounded-lg px-4 py-3 border border-indigo-200 bg-indigo-50/60 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm">📑</span>
+                                <span className="text-xs text-indigo-600 font-medium">識別契約類型：</span>
+                                <span className="text-sm font-bold text-indigo-900">{result.contractType}</span>
+                            </div>
+                            {result.contractTypeReasoning && (
+                                <p className="text-xs text-indigo-700 leading-relaxed pl-6">
+                                    <span className="text-indigo-500 font-medium">判斷依據：</span>{result.contractTypeReasoning}
+                                </p>
+                            )}
+                            {result.frameworkNote && (
+                                <p className="text-xs text-indigo-700 leading-relaxed pl-6">
+                                    <span className="text-indigo-500 font-medium">採用框架：</span>{result.frameworkNote}
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     <div className={`rounded-lg px-4 py-3 flex items-center gap-3 border bg-white shadow-sm ${
                         failCount > 0 ? 'border-red-200' : warnCount > 0 ? 'border-yellow-200' : 'border-green-200'
                     }`}>
@@ -359,7 +460,7 @@ export default function ArchitectureReviewPanel({ documentName, contractNumber }
                     </div>
 
                     <div className="max-h-[500px] overflow-y-auto pr-1 custom-scrollbar-arch">
-                        {results.map((item) => (
+                        {items.map((item) => (
                             <ReviewItemCard key={item.id} item={item} />
                         ))}
                     </div>

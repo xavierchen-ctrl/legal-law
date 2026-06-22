@@ -1,14 +1,32 @@
 import { NextResponse } from 'next/server';
 import { listFiles, downloadFile, findFileByDocumentName } from '@/lib/drive-service';
-import { analyzeContractArchitecture, analyzeContractArchitectureMulti, DocumentInput } from '@/lib/ai-service';
+import {
+    analyzeContractArchitecture,
+    analyzeContractArchitectureMulti,
+    DocumentInput,
+    ArchitectureCaseContext,
+} from '@/lib/ai-service';
 import { extractTextFromPdf } from '@/lib/pdf-helper';
 
 export const dynamic = 'force-dynamic';
+
+function extractCaseContext(body: any): ArchitectureCaseContext | undefined {
+    const ctx = body?.caseContext;
+    if (!ctx || typeof ctx !== 'object') return undefined;
+    const cleaned: ArchitectureCaseContext = {
+        contractTypeHint: typeof ctx.contractTypeHint === 'string' ? ctx.contractTypeHint.trim() : undefined,
+        businessBackground: typeof ctx.businessBackground === 'string' ? ctx.businessBackground.trim() : undefined,
+        legalFocus: typeof ctx.legalFocus === 'string' ? ctx.legalFocus.trim() : undefined,
+    };
+    const hasAny = Object.values(cleaned).some(v => v && v.length > 0);
+    return hasAny ? cleaned : undefined;
+}
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
         const { documentName, contractNumber, contractText, documents } = body;
+        const caseContext = extractCaseContext(body);
 
         // Mode A: Multi-document suite
         if (documents && Array.isArray(documents) && documents.length > 0) {
@@ -18,7 +36,7 @@ export async function POST(request: Request) {
             if (validDocs.length === 0) {
                 return NextResponse.json({ error: '所有文件內容均過短，無法分析。' }, { status: 400 });
             }
-            const results = await analyzeContractArchitectureMulti(validDocs);
+            const results = await analyzeContractArchitectureMulti(validDocs, caseContext);
             return NextResponse.json({
                 success: true,
                 mode: 'suite',
@@ -32,7 +50,7 @@ export async function POST(request: Request) {
             if (contractText.trim().length < 50) {
                 return NextResponse.json({ error: '合約文字內容不足，無法進行分析。' }, { status: 400 });
             }
-            const results = await analyzeContractArchitecture(contractText);
+            const results = await analyzeContractArchitecture(contractText, caseContext);
             return NextResponse.json({
                 success: true,
                 mode: 'text',
@@ -85,7 +103,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const results = await analyzeContractArchitecture(textContent);
+        const results = await analyzeContractArchitecture(textContent, caseContext);
         return NextResponse.json({
             success: true,
             mode: 'drive',
