@@ -139,6 +139,18 @@ export default function ContractNameReviewPanel({ documentName, contractNumber }
     const failCount = result?.items.filter(i => i.status === 'FAIL').length ?? 0;
     const warnCount = result?.items.filter(i => i.status === 'WARN').length ?? 0;
     const majorRiskCount = result?.items.filter(i => i.findingType === 'MAJOR_RISK').length ?? 0;
+    const generalRiskCount = result?.items.filter(i => i.findingType === 'GENERAL_RISK').length ?? 0;
+    const optimizationCount = result?.items.filter(i => i.findingType === 'OPTIMIZATION' || i.findingType === 'DRAFTING').length ?? 0;
+    const realRiskCount = majorRiskCount + generalRiskCount;
+
+    // 篩選顯示：全部 / 僅必要關注 / 僅文字優化
+    const [itemFilter, setItemFilter] = useState<'ALL' | 'RISK_ONLY' | 'OPTIMIZATION_ONLY'>('ALL');
+    const visibleItems = result?.items.filter(i => {
+        if (itemFilter === 'ALL') return true;
+        if (itemFilter === 'RISK_ONLY') return i.findingType === 'MAJOR_RISK' || i.findingType === 'GENERAL_RISK';
+        if (itemFilter === 'OPTIMIZATION_ONLY') return i.findingType === 'OPTIMIZATION' || i.findingType === 'DRAFTING';
+        return true;
+    }) ?? [];
 
     return (
         <div className="card p-6 space-y-4 shadow-sm border border-orange-100 bg-gradient-to-b from-white to-orange-50/20">
@@ -324,37 +336,70 @@ export default function ContractNameReviewPanel({ documentName, contractNumber }
                         </div>
                     )}
 
-                    {/* Summary banner */}
-                    <div className={`rounded-lg px-4 py-3 border bg-white shadow-sm flex items-start gap-3 ${
-                        failCount > 0 || majorRiskCount > 0 ? 'border-red-200' : warnCount > 0 ? 'border-amber-200' : 'border-green-200'
-                    }`}>
-                        <span className="text-xl mt-0.5">
-                            {failCount > 0 || majorRiskCount > 0 ? '❌' : warnCount > 0 ? '⚠️' : '✅'}
-                        </span>
-                        <div className="flex-1">
-                            <p className={`text-sm font-bold ${failCount > 0 || majorRiskCount > 0 ? 'text-red-700' : warnCount > 0 ? 'text-amber-700' : 'text-green-700'}`}>
-                                {failCount > 0 || majorRiskCount > 0
-                                    ? `發現 ${majorRiskCount > 0 ? majorRiskCount + ' 項重大法律風險、' : ''}${failCount} 項問題，${warnCount} 項需注意`
-                                    : warnCount > 0
-                                    ? `${warnCount} 項需注意，建議修正`
-                                    : '名稱與前言審閱通過，無明顯問題'}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{result.overallAssessment}</p>
-                            {/* Finding type summary */}
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {(['MAJOR_RISK', 'GENERAL_RISK', 'OPTIMIZATION', 'DRAFTING'] as const).map(ft => {
-                                    const count = result.items.filter(i => i.findingType === ft).length;
-                                    if (!count) return null;
-                                    const cfg = FINDING_TYPE_CONFIG[ft];
-                                    return (
-                                        <span key={ft} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cfg.badge}`}>
-                                            {cfg.icon} {cfg.label} ×{count}
-                                        </span>
-                                    );
-                                })}
+                    {/* Summary banner — 區分「必要法律風險」與「文字優化建議」 */}
+                    {(() => {
+                        const hasRealRisk = realRiskCount > 0;
+                        const onlyOptimization = !hasRealRisk && optimizationCount > 0;
+                        const allPass = !hasRealRisk && optimizationCount === 0;
+
+                        const banner = hasRealRisk
+                            ? { border: 'border-red-200', icon: '❌', title: 'text-red-700', label: `發現 ${realRiskCount} 項必要關注（${majorRiskCount} 項重大法律風險、${generalRiskCount} 項一般風險）${optimizationCount > 0 ? `；另有 ${optimizationCount} 項文字優化建議` : ''}` }
+                            : onlyOptimization
+                                ? { border: 'border-blue-200', icon: '📝', title: 'text-blue-700', label: `未發現必要法律風險；以下為 ${optimizationCount} 項文字優化建議（非條文缺漏）` }
+                                : { border: 'border-green-200', icon: '✅', title: 'text-green-700', label: '名稱與前言審閱通過，無重大法律風險或必要修約事項' };
+
+                        return (
+                            <div className={`rounded-lg px-4 py-3 border bg-white shadow-sm flex items-start gap-3 ${banner.border}`}>
+                                <span className="text-xl mt-0.5">{banner.icon}</span>
+                                <div className="flex-1">
+                                    <p className={`text-sm font-bold ${banner.title}`}>{banner.label}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{result.overallAssessment}</p>
+                                    {onlyOptimization && (
+                                        <p className="text-xs text-blue-600 mt-1.5 italic leading-relaxed">
+                                            💡 文字優化建議屬「可改善但無實質法律風險」，並非條文缺漏。可依案件需求與談判籌碼自行斟酌是否採納。
+                                        </p>
+                                    )}
+                                    {/* Finding type summary */}
+                                    {!allPass && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {(['MAJOR_RISK', 'GENERAL_RISK', 'OPTIMIZATION', 'DRAFTING'] as const).map(ft => {
+                                                const count = result.items.filter(i => i.findingType === ft).length;
+                                                if (!count) return null;
+                                                const cfg = FINDING_TYPE_CONFIG[ft];
+                                                return (
+                                                    <span key={ft} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cfg.badge}`}>
+                                                        {cfg.icon} {cfg.label} ×{count}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+                        );
+                    })()}
+
+                    {/* Filter toolbar — 分流必要關注 vs 文字優化 */}
+                    {result.items.length > 0 && (realRiskCount > 0 || optimizationCount > 0) && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs text-gray-500 mr-1">顯示：</span>
+                            {([
+                                { v: 'ALL', label: `全部 (${result.items.length})`, style: 'bg-gray-700 text-white' },
+                                { v: 'RISK_ONLY', label: `🚨 僅必要關注 (${realRiskCount})`, style: 'bg-red-600 text-white' },
+                                { v: 'OPTIMIZATION_ONLY', label: `📝 僅文字優化 (${optimizationCount})`, style: 'bg-blue-600 text-white' },
+                            ] as const).map(f => (
+                                <button
+                                    key={f.v}
+                                    onClick={() => setItemFilter(f.v)}
+                                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
+                                        itemFilter === f.v ? f.style : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
                         </div>
-                    </div>
+                    )}
 
                     {/* Suggested corrections */}
                     {(result.suggestedName || result.suggestedPreamble) && (
@@ -401,9 +446,13 @@ export default function ContractNameReviewPanel({ documentName, contractNumber }
 
                     {/* Review items */}
                     <div className="max-h-[520px] overflow-y-auto pr-1 custom-scrollbar-name">
-                        {result.items.map(item => (
-                            <ReviewItemCard key={item.id} item={item} />
-                        ))}
+                        {visibleItems.length === 0 ? (
+                            <p className="text-xs text-center text-gray-400 py-6">無符合篩選條件的項目</p>
+                        ) : (
+                            visibleItems.map(item => (
+                                <ReviewItemCard key={item.id} item={item} />
+                            ))
+                        )}
                     </div>
 
                     <style jsx>{`

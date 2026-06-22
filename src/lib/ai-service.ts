@@ -389,20 +389,61 @@ ${contextSection}
 ${text.substring(0, 20000)}
 """
 
-═══ STEP 3: REVIEW CRITERIA ═══
+═══ STEP 3 (MANDATORY): READ THE ENTIRE CONTRACT BEFORE ANALYZING NAME/PREAMBLE ═══
+BEFORE making any finding about the name or preamble, you MUST scan ALL clauses of the contract to understand:
+(a) The actual business model — is this 合作（joint endeavor）、委任（mandate）、承攬（contract for work）、買賣（sale）、勞動／聘僱（employment）、代理（agency）、經銷（distribution）、授權（license）, etc.?
+   Look at: who does what, who bears risk, who gets paid for what, division of revenue/cost, control relationship.
+(b) Each party's substantive role across ALL clauses (not only the preamble).
+(c) The contract's overall framework and clause structure.
+
+Only after this overall reading may you assess whether the name/preamble matches reality.
+
+═══ STEP 4 (CRITICAL): TWO ANTI-OVER-CLASSIFICATION RULES ═══
+
+RULE A — Cross-check before flagging a "role omission" in the preamble:
+Before claiming the preamble fails to describe a party's role, search ALL clauses of the contract for that role.
+If the role IS described in the body (e.g. 工作內容、合作項目、職責、服務範圍、開發推廣等條款), then:
+  - DO NOT flag this as a defect of the preamble.
+  - At most, mention it as a minor OPTIMIZATION suggestion, and only if it would genuinely improve readability.
+  - In the detail, explicitly state where the role IS described (cite the clause).
+
+RULE B — Substance-first terminology analysis (do NOT mechanically replace terms):
+Before suggesting that a term like 「合作」 should be replaced by 「委託」、「委任」、「代理」、「承攬」 etc., verify the substantive content:
+  - If the body describes a joint promotion / joint sales / shared revenue / mutual contribution arrangement → 「合作」IS the correct term. DO NOT suggest changing it.
+  - Only suggest 「委託／委任」 if the body actually shows one party paying another to handle affairs on its behalf.
+  - Only suggest 「代理」 if there is actual agency authority granted to act in another's name.
+  - Only suggest 「勞動／僱傭」 (over 「顧問」 or 「承攬」) if substantive labor-law triggers are present (人格從屬、組織從屬、經濟從屬).
+The goal: do NOT lead users into mis-characterizing the legal relationship by suggesting "more precise" terms that are actually wrong for the underlying business model.
+
+═══ STEP 5: REVIEW CRITERIA ═══
 Analyze the contract name and preamble on exactly 5 criteria:
 1. 契約名稱是否與實際交易內容一致（名稱反映的法律關係是否符合條款實質）
-2. 前言是否正確描述合作目的與交易架構（背景、目的、當事人角色）
+2. 前言是否正確描述合作目的與交易架構（背景、目的、當事人角色）— remember RULE A
 3. 契約名稱與條款內容是否一致（避免名稱標榜甲方不承擔責任但條款卻相反）
-4. 是否使用不精確或誤導性用語（如誤用「合作」代替「委託」、「顧問」代替「僱傭」）
+4. 是否使用不精確或誤導性用語 — remember RULE B
 5. 名稱或前言是否可能影響後續法律解釋或責任認定（如勞動/承攬爭議、稅務定性）
 
-═══ STEP 4: FINDING TYPE CLASSIFICATION ═══
-For each non-PASS item, assign a findingType — be conservative, do NOT over-classify:
-- MAJOR_RISK (重大法律風險): Only if the issue could affect contract validity/enforceability, create serious unintended liability, cause a legal status misclassification (e.g. employment vs. contract-for-service), or expose a party to regulatory/tax consequences. This should be rare.
-- GENERAL_RISK (一般風險提醒): Moderate concern worth noting — minor ambiguity, incomplete description, or potential (but not certain) dispute trigger.
-- OPTIMIZATION (條文優化): Could be clearer, more precise, or more complete, but poses no real legal risk.
-- DRAFTING (起草建議): Stylistic preference, conventional phrasing, or minor drafting convention — not a risk.
+═══ STEP 6: FINDING TYPE CLASSIFICATION — STRICT ═══
+For each non-PASS item, assign a findingType. BE STRICT, NOT GENEROUS:
+
+- MAJOR_RISK (重大法律風險): Reserve for issues that would actually affect contract validity/enforceability, create serious unintended liability, cause legal-status misclassification (e.g. employment vs. service-contract), or expose a party to regulatory/tax consequences. SHOULD BE RARE.
+
+- GENERAL_RISK (一般風險提醒): Concrete moderate risk — meaningful ambiguity in a legally significant term, real likelihood of dispute. NOT for "could be clearer" issues.
+
+- OPTIMIZATION (條文優化): Wording could be clearer, more complete, or more conventional, but poses NO concrete legal risk. Examples that BELONG here (NOT in MAJOR/GENERAL_RISK):
+  * 勞動契約中「應配合甲方合理之出勤、考核及管理措施」等可由工作規則／管理辦法／雇主管理權補足之事項
+  * 用語精確性的改善建議（已可從上下文推知意思時）
+  * 對任意條款的補充建議
+  * 商務用語的細緻化（但實質含義已明確時）
+
+- DRAFTING (起草建議): Stylistic preference or conventional phrasing only — not a risk.
+
+DO-NOT-DO LIST (will be checked):
+✗ DO NOT flag matters that can be governed by 工作規則／管理辦法／雇主管理權 (in labor contracts) as MAJOR_RISK or GENERAL_RISK. At most OPTIMIZATION.
+✗ DO NOT flag a preamble for "missing role description" if the body's clauses describe that role.
+✗ DO NOT suggest 「合作」→「委託」 unless the body clearly describes a mandate/agency relationship.
+✗ DO NOT over-classify "could be more precise" as MAJOR_RISK or GENERAL_RISK. Wording-precision feedback is OPTIMIZATION.
+
 For PASS items, set findingType: "PASS".
 
 ═══ OUTPUT FORMAT ═══
@@ -410,9 +451,9 @@ Return ONLY a raw JSON object (no markdown):
 {
     "trackChangesDetected": false,
     "trackChangesWarning": null,
-    "overallAssessment": "2-3 sentence overall assessment in Traditional Chinese",
-    "suggestedName": "Suggested corrected name or null",
-    "suggestedPreamble": "Suggested corrected preamble or null",
+    "overallAssessment": "2-3 sentence overall assessment in Traditional Chinese. If the analysis finds only OPTIMIZATION/DRAFTING items (no MAJOR_RISK / GENERAL_RISK / FAIL), explicitly state '無重大法律風險或必要修約事項，以下為文字優化建議'.",
+    "suggestedName": "Suggested corrected name, or null if the current name is appropriate",
+    "suggestedPreamble": "Suggested corrected preamble, or null if the current preamble is appropriate",
     "items": [
         {
             "id": 1,
@@ -420,7 +461,7 @@ Return ONLY a raw JSON object (no markdown):
             "title": "Full criterion description",
             "status": "PASS",
             "findingType": "PASS",
-            "detail": "Detailed findings in Traditional Chinese — quote problematic text if any",
+            "detail": "Detailed findings in Traditional Chinese — quote problematic text if any. If RULE A applies (role IS described in the body), state which clause already describes it. If RULE B applies (term is appropriate to the substantive content), say so.",
             "suggestion": null
         }
     ]
