@@ -215,9 +215,6 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
             <Link href="/drafting" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-violet-600">
               <span>✍️</span> 文件撰擬
             </Link>
-            <Link href="/reviews" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-blue-600">
-              <span>⚖️</span> 智慧審閱
-            </Link>
             <Link href="/admin/logs" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
               <span>📋</span> 系統日誌
             </Link>
