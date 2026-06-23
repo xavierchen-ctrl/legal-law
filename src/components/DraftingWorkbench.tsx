@@ -8,7 +8,8 @@ import type { DraftResult, RewriteResult } from '@/lib/drafting-service';
 
 type DocumentType =
     | 'NDA' | 'COOPERATION' | 'AMENDMENT' | 'TERMINATION'
-    | 'REPLY_LETTER' | 'COMPANY_LETTER' | 'FORMAL_LETTER' | 'REGISTERED_LETTER' | 'CLAUSE_DRAFT';
+    | 'REPLY_LETTER' | 'COMPANY_LETTER' | 'FORMAL_LETTER' | 'REGISTERED_LETTER'
+    | 'COMPLAINT_LETTER' | 'CLAUSE_DRAFT';
 
 type RiskPreference = 'CONSERVATIVE' | 'BALANCED' | 'AGGRESSIVE';
 
@@ -21,8 +22,14 @@ const DOC_TYPES = [
     { id: 'COMPANY_LETTER'   as DocumentType, label: '公司函文',  icon: '🏢', desc: '對外公司函' },
     { id: 'FORMAL_LETTER'    as DocumentType, label: '正式函文',  icon: '📄', desc: '正式對外函文' },
     { id: 'REGISTERED_LETTER'as DocumentType, label: '存證信函',  icon: '📮', desc: '存證信函' },
+    { id: 'COMPLAINT_LETTER' as DocumentType, label: '檢舉函',     icon: '🚨', desc: '對主管機關之檢舉函' },
     { id: 'CLAUSE_DRAFT'     as DocumentType, label: '條文起草',  icon: '✍️', desc: '單一條文多版本' },
 ];
+
+const LETTER_TYPE_SET = new Set<DocumentType>([
+    'REPLY_LETTER', 'COMPANY_LETTER', 'FORMAL_LETTER',
+    'REGISTERED_LETTER', 'COMPLAINT_LETTER',
+]);
 
 const RISK_OPTIONS = [
     { id: 'CONSERVATIVE' as RiskPreference, label: '保守',  desc: '強化己方保護',  active: 'border-blue-400 bg-blue-50 text-blue-800'   },
@@ -359,6 +366,8 @@ function LibraryDrawer({ onInsert, onClose }: { onInsert: (c: LibClause) => void
 
 // ── Main Workbench ────────────────────────────────────────────────────────────
 
+interface ReferenceDoc { name: string; text: string; charCount: number }
+
 export default function DraftingWorkbench() {
     const [docType, setDocType] = useState<DocumentType>('NDA');
     const [partyA, setPartyA] = useState('');
@@ -368,6 +377,22 @@ export default function DraftingWorkbench() {
     const [companyPosition, setCompanyPosition] = useState('');
     const [riskPreference, setRiskPreference] = useState<RiskPreference>('BALANCED');
     const [additionalNotes, setAdditionalNotes] = useState('');
+    // 函文／檢舉函類專用欄位
+    const [recipient, setRecipient] = useState('');
+    const [sender, setSender] = useState('');
+    const [factSummary, setFactSummary] = useState('');
+    const [claim, setClaim] = useState('');
+    const [legalBasis, setLegalBasis] = useState('');
+    const [deadlineAndConsequence, setDeadlineAndConsequence] = useState('');
+    const [incomingLetterRef, setIncomingLetterRef] = useState('');
+    const [incomingLetterSummary, setIncomingLetterSummary] = useState('');
+    const [subjectOfComplaint, setSubjectOfComplaint] = useState('');
+    const [allegedViolations, setAllegedViolations] = useState('');
+    // 參考資料
+    const [refDocs, setRefDocs] = useState<ReferenceDoc[]>([]);
+    const [refUploading, setRefUploading] = useState(false);
+    const [refUploadError, setRefUploadError] = useState<string | null>(null);
+
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<DraftResult | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -378,9 +403,55 @@ export default function DraftingWorkbench() {
     const [copySuccess, setCopySuccess] = useState(false);
     const [extraClauses, setExtraClauses] = useState<DraftResult['clauses']>([]);
 
-    const canSubmit = caseBackground.trim().length >= 10 && businessModel.trim().length >= 5 && companyPosition.trim().length >= 5;
+    const isLetterType = LETTER_TYPE_SET.has(docType);
+    const isComplaintType = docType === 'COMPLAINT_LETTER';
+    const isReplyLetter = docType === 'REPLY_LETTER';
+
+    const canSubmit = isLetterType
+        ? (factSummary.trim().length >= 20 || caseBackground.trim().length >= 20 || refDocs.length > 0)
+        : (caseBackground.trim().length >= 10 && businessModel.trim().length >= 5 && companyPosition.trim().length >= 5);
+
+    const handleUploadRef = async (file: File) => {
+        setRefUploadError(null);
+        if (file.size > 4 * 1024 * 1024) {
+            setRefUploadError(`📁 檔案太大（${(file.size / 1024 / 1024).toFixed(1)} MB），上限 4 MB`);
+            return;
+        }
+        setRefUploading(true);
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            const res = await fetch('/api/extract-text', { method: 'POST', body: form });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? '解析失敗');
+            setRefDocs(prev => [...prev, { name: file.name, text: data.text, charCount: data.charCount ?? data.text.length }]);
+        } catch (err: any) {
+            setRefUploadError(err.message);
+        } finally {
+            setRefUploading(false);
+        }
+    };
+
+    const removeRef = (idx: number) => setRefDocs(prev => prev.filter((_, i) => i !== idx));
 
     const handleGenerate = async () => {
+        // Preflight：函文類事實過短時提醒
+        if (isLetterType) {
+            const factLen = factSummary.trim().length + caseBackground.trim().length;
+            if (factLen < 80 && refDocs.length === 0) {
+                const ok = window.confirm(
+                    `您提供的案件事實少於 80 字，且未上傳參考資料。\n\n` +
+                    `為避免 AI 自行推論與案件無關之情節（例如錯誤的事件背景），建議先補充：\n` +
+                    `• 具體時間、地點、人物\n` +
+                    `• 對方行為內容\n` +
+                    `• 您的請求事項\n` +
+                    `• 或上傳相關附件作為事實依據\n\n` +
+                    `是否仍要繼續產生草稿？\n（系統將以「[待補：xxx]」標示缺漏處，不會憑空編造具體細節）`
+                );
+                if (!ok) return;
+            }
+        }
+
         setLoading(true); setError(null); setResult(null); setEdits({}); setExtraClauses([]);
         try {
             const res = await fetch('/api/contract-draft', {
@@ -390,6 +461,19 @@ export default function DraftingWorkbench() {
                     documentType: docType, caseBackground, businessModel, companyPosition,
                     riskPreference, additionalNotes: additionalNotes || undefined,
                     partyAName: partyA || undefined, partyBName: partyB || undefined,
+                    recipient: recipient || undefined,
+                    sender: sender || undefined,
+                    factSummary: factSummary || undefined,
+                    claim: claim || undefined,
+                    legalBasis: legalBasis || undefined,
+                    deadlineAndConsequence: deadlineAndConsequence || undefined,
+                    incomingLetterRef: incomingLetterRef || undefined,
+                    incomingLetterSummary: incomingLetterSummary || undefined,
+                    subjectOfComplaint: subjectOfComplaint || undefined,
+                    allegedViolations: allegedViolations || undefined,
+                    referenceDocuments: refDocs.length > 0
+                        ? refDocs.map(d => ({ name: d.name, text: d.text }))
+                        : undefined,
                 }),
             });
             const data = await res.json();
@@ -492,21 +576,148 @@ export default function DraftingWorkbench() {
                             ))}
                         </div>
 
-                        {/* Main textareas */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {[
-                                { label: '案件背景', val: caseBackground, set: setCaseBackground, ph: '說明案件或合作背景，例如：雙方擬就 AI 技術開發進行合作，需先簽署保密協議以保護技術資訊...', req: true },
-                                { label: '商務模式', val: businessModel, set: setBusinessModel, ph: '說明商業模式或合作架構，例如：技術授權合作、聯合開發、供應鏈採購、勞務委外...', req: true },
-                                { label: '公司立場', val: companyPosition, set: setCompanyPosition, ph: '說明公司在此案件中的立場與目標，例如：希望加強智財保護、避免競業風險、確保對方履約...', req: true },
-                            ].map(f => (
-                                <div key={f.label}>
-                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-                                        {f.label} {f.req && <span className="text-red-400">*</span>}
-                                    </label>
-                                    <textarea value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.ph} rows={5}
-                                        className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition-all text-gray-800 placeholder-gray-400" />
+                        {/* 主要欄位：契約類與函文類動態顯示 */}
+                        {!isLetterType ? (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {[
+                                    { label: '案件背景', val: caseBackground, set: setCaseBackground, ph: '說明案件或合作背景，例如：雙方擬就 AI 技術開發進行合作，需先簽署保密協議以保護技術資訊...', req: true },
+                                    { label: '商務模式', val: businessModel, set: setBusinessModel, ph: '說明商業模式或合作架構，例如：技術授權合作、聯合開發、供應鏈採購、勞務委外...', req: true },
+                                    { label: '公司立場', val: companyPosition, set: setCompanyPosition, ph: '說明公司在此案件中的立場與目標，例如：希望加強智財保護、避免競業風險、確保對方履約...', req: true },
+                                ].map(f => (
+                                    <div key={f.label}>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                                            {f.label} {f.req && <span className="text-red-400">*</span>}
+                                        </label>
+                                        <textarea value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.ph} rows={5}
+                                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 transition-all text-gray-800 placeholder-gray-400" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2 text-xs text-violet-700 leading-relaxed">
+                                    📋 {isComplaintType ? '檢舉函' : '函文'}結構欄位：請逐項填寫，AI 將依此撰擬。
+                                    缺漏處系統會以「[待補：xxx]」標示，<span className="font-semibold">不會自行推論未提供之具體事實</span>。
                                 </div>
-                            ))}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                                            {isComplaintType ? '受理機關／收件對象' : '收件對象'}
+                                        </label>
+                                        <input type="text" value={recipient} onChange={e => setRecipient(e.target.value)}
+                                            placeholder={isComplaintType ? '例：公平交易委員會' : '例：XX 股份有限公司 法務部'}
+                                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                                            {isComplaintType ? '檢舉人' : '寄件人'}
+                                        </label>
+                                        <input type="text" value={sender} onChange={e => setSender(e.target.value)}
+                                            placeholder={isComplaintType ? '例：WaveNet 股份有限公司' : '例：本公司 法務部'}
+                                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                    </div>
+                                </div>
+
+                                {isComplaintType && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">被檢舉對象</label>
+                                            <input type="text" value={subjectOfComplaint} onChange={e => setSubjectOfComplaint(e.target.value)}
+                                                placeholder="例：XX 股份有限公司 / 行為人姓名"
+                                                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">涉嫌違反法令</label>
+                                            <input type="text" value={allegedViolations} onChange={e => setAllegedViolations(e.target.value)}
+                                                placeholder="例：公平交易法第X條、消費者保護法第Y條"
+                                                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isReplyLetter && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">對方來函日期／字號</label>
+                                            <input type="text" value={incomingLetterRef} onChange={e => setIncomingLetterRef(e.target.value)}
+                                                placeholder="例：114.06.15 收文字號 XX字第123號"
+                                                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">來函要旨</label>
+                                            <input type="text" value={incomingLetterSummary} onChange={e => setIncomingLetterSummary(e.target.value)}
+                                                placeholder="例：要求我方就 XX 事項說明"
+                                                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                                        案件事實 <span className="text-red-400">*</span>
+                                        <span className="ml-1 font-normal text-gray-400">（請具體：時間、人物、事件、地點）</span>
+                                    </label>
+                                    <textarea value={factSummary} onChange={e => setFactSummary(e.target.value)} rows={5}
+                                        placeholder={isComplaintType
+                                            ? '請具體陳述：何時、何地、被檢舉人之何種行為，以及為何認為違法。\n例：「於 114 年 5 月 1 日，被檢舉人於其官網以『市場唯一』之詞行不實廣告，致消費者誤認...」'
+                                            : '請具體陳述本案事實。\n例：「雙方於 114 年 3 月 1 日簽訂合作契約，相對人未依約於 114 年 5 月 31 日前完成交付...」'}
+                                        className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 text-gray-800 placeholder-gray-400" />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">主張／請求事項</label>
+                                        <textarea value={claim} onChange={e => setClaim(e.target.value)} rows={3}
+                                            placeholder={isComplaintType
+                                                ? '例：懇請貴會依法調查並予以裁處'
+                                                : '例：請於文到 7 日內完成交付並支付遲延損害金 XX 元'}
+                                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 text-gray-800 placeholder-gray-400" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">期限與後果</label>
+                                        <textarea value={deadlineAndConsequence} onChange={e => setDeadlineAndConsequence(e.target.value)} rows={3}
+                                            placeholder="例：請於文到 14 日內函覆，逾期將循法律途徑追究..."
+                                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400 text-gray-800 placeholder-gray-400" />
+                                    </div>
+                                </div>
+
+                                {!isComplaintType && (
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">法律依據</label>
+                                        <input type="text" value={legalBasis} onChange={e => setLegalBasis(e.target.value)}
+                                            placeholder="例：違反契約第 5 條、民法第 226 條"
+                                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 參考資料上傳 */}
+                        <div className="rounded-xl border border-violet-200 bg-violet-50/30 px-4 py-3 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div>
+                                    <p className="text-xs font-bold text-violet-800">📎 參考資料／附件上傳</p>
+                                    <p className="text-xs text-violet-600 mt-0.5">支援 PDF / DOCX / TXT，上限 4 MB。AI 將以實際文件內容為基礎撰擬，避免推論虛構情節。</p>
+                                </div>
+                                <label className="cursor-pointer text-xs px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-700 font-semibold transition-colors">
+                                    {refUploading ? '解析中...' : '+ 上傳檔案'}
+                                    <input type="file" accept=".pdf,.docx,.txt" className="hidden" disabled={refUploading}
+                                        onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadRef(f); e.target.value = ''; }} />
+                                </label>
+                            </div>
+                            {refUploadError && <p className="text-xs text-red-500">{refUploadError}</p>}
+                            {refDocs.length > 0 && (
+                                <ul className="space-y-1 mt-2">
+                                    {refDocs.map((d, i) => (
+                                        <li key={i} className="flex items-center gap-2 px-3 py-1.5 rounded bg-white border border-violet-200 text-xs">
+                                            <span className="text-violet-600">📄</span>
+                                            <span className="font-medium text-gray-800 flex-1 truncate">{d.name}</span>
+                                            <span className="text-gray-400">{d.charCount.toLocaleString()} 字元</span>
+                                            <button onClick={() => removeRef(i)} className="text-red-400 hover:text-red-600 font-bold">✕</button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
 
                         {/* Risk Preference */}
