@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import type { ContractDiffResult, ClauseDiff, ChangeType, ImpactLevel } from '@/lib/diff-service';
+import type { ContractDiffResult, ClauseDiff, ChangeType, ImpactLevel, OurRole, RiskDirection, ResolvedRole } from '@/lib/diff-service';
 
 type InputMode = 'text' | 'file';
 
@@ -159,23 +159,42 @@ const RISK_STYLES = {
     NONE:   { label: '無變更', banner: 'bg-gray-50 border-gray-300 text-gray-600', icon: '⚪' },
 };
 
+const RISK_DIRECTION_STYLE: Record<RiskDirection, { label: string; icon: string; badge: string }> = {
+    INCREASE_OUR_RISK: { label: '對我方不利', icon: '⚠️', badge: 'bg-red-100 text-red-700 border-red-300' },
+    DECREASE_OUR_RISK: { label: '對我方有利', icon: '✅', badge: 'bg-green-100 text-green-700 border-green-300' },
+    NEUTRAL:           { label: '中性影響',   icon: '➖', badge: 'bg-gray-100 text-gray-600 border-gray-300' },
+    UNCLEAR:           { label: '方向不明',   icon: '❓', badge: 'bg-slate-100 text-slate-600 border-slate-300' },
+};
+
+const ROLE_LABEL: Record<ResolvedRole, { label: string; icon: string; badge: string }> = {
+    PARTY_A: { label: '我方為甲方', icon: '🅰️', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+    PARTY_B: { label: '我方為乙方', icon: '🅱️', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
+    UNCLEAR: { label: '角色不明確', icon: '❓', badge: 'bg-gray-50 text-gray-600 border-gray-200' },
+};
+
 function ClauseCard({ clause, view }: { clause: ClauseDiff; view: 'diff' | 'side' }) {
     const [expanded, setExpanded] = useState(clause.impactLevel === 'HIGH' || clause.changeType !== 'UNCHANGED');
     const cs = CHANGE_STYLES[clause.changeType as keyof typeof CHANGE_STYLES] ?? CHANGE_STYLES['UNCHANGED'];
     const is = IMPACT_STYLES[clause.impactLevel as keyof typeof IMPACT_STYLES] ?? IMPACT_STYLES['NONE'];
+    const dirCfg = RISK_DIRECTION_STYLE[clause.riskDirection as RiskDirection] ?? RISK_DIRECTION_STYLE.UNCLEAR;
 
     return (
         <div className={`rounded-lg border ${cs.border} ${cs.bg} mb-2 overflow-hidden`}>
             {/* Header */}
             <button
                 onClick={() => setExpanded(v => !v)}
-                className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:brightness-95 transition-all"
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:brightness-95 transition-all flex-wrap"
             >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${cs.dot}`} />
                 <span className={`text-xs font-bold flex-1 ${cs.text}`}>{clause.clauseTitle}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cs.text} border-current/30`}>
                     {cs.label}
                 </span>
+                {clause.riskDirection && clause.riskDirection !== 'UNCLEAR' && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${dirCfg.badge}`}>
+                        {dirCfg.icon} {dirCfg.label}
+                    </span>
+                )}
                 {clause.impactLevel !== 'NONE' && (
                     <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${is.color}`}>
                         {is.label}
@@ -231,33 +250,56 @@ function ClauseCard({ clause, view }: { clause: ClauseDiff; view: 'diff' | 'side
                         </div>
                     )}
 
-                    {/* Impact */}
-                    {clause.impactDescription && clause.impactLevel !== 'NONE' && (
-                        <div className={`rounded p-2.5 border text-xs leading-relaxed ${is.color}`}>
-                            <div className="flex items-center gap-2 mb-1.5">
-                                <p className="font-semibold">對我方影響</p>
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 border border-orange-200 font-medium leading-none">
-                                    💡 AI 延伸分析
-                                </span>
-                            </div>
+                    {/* 客觀變動內容 */}
+                    {clause.impactDescription && (
+                        <div className="rounded p-2.5 border border-gray-200 bg-white text-xs text-gray-700 leading-relaxed">
+                            <p className="font-semibold mb-1 text-gray-600">📄 變動內容（客觀說明）</p>
                             <p>{clause.impactDescription}</p>
-                            {clause.affectedRights.length > 0 && (
-                                <>
-                                    <p className="font-semibold mt-2 mb-1">
-                                        📌 受影響項目
-                                        <span className="font-normal ml-1 opacity-75">（依條文異動推論）</span>
-                                    </p>
-                                    <ul className="space-y-0.5">
-                                        {clause.affectedRights.map((r, i) => (
-                                            <li key={i} className="flex gap-1.5">
-                                                <span className="font-bold shrink-0">•</span>
-                                                <span>{r}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </>
+                        </div>
+                    )}
+
+                    {/* 我方視角 vs 相對人視角 — 分流呈現 */}
+                    {(clause.ourSideImpact || clause.counterpartyImpact) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {clause.ourSideImpact && (
+                                <div className={`rounded p-2.5 border text-xs leading-relaxed ${dirCfg.badge}`}>
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                        <p className="font-semibold">👤 我方視角</p>
+                                        <span className="text-xs px-1.5 py-0.5 rounded border font-medium leading-none">
+                                            {dirCfg.icon} {dirCfg.label}
+                                        </span>
+                                    </div>
+                                    <p>{clause.ourSideImpact}</p>
+                                </div>
                             )}
-                            <p className="mt-2 pt-1.5 border-t border-current/20 opacity-70 italic">
+                            {clause.counterpartyImpact && (
+                                <div className="rounded p-2.5 border border-gray-200 bg-gray-50 text-xs text-gray-700 leading-relaxed">
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                        <p className="font-semibold text-gray-600">🤝 相對人視角</p>
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-500 leading-none">參考用</span>
+                                    </div>
+                                    <p>{clause.counterpartyImpact}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 受影響項目 */}
+                    {clause.affectedRights.length > 0 && (
+                        <div className="rounded p-2.5 border border-orange-200 bg-orange-50 text-xs text-orange-800 leading-relaxed">
+                            <p className="font-semibold mb-1">
+                                📌 受影響項目
+                                <span className="font-normal ml-1 opacity-75">（依條文異動推論）</span>
+                            </p>
+                            <ul className="space-y-0.5">
+                                {clause.affectedRights.map((r, i) => (
+                                    <li key={i} className="flex gap-1.5">
+                                        <span className="font-bold shrink-0">•</span>
+                                        <span>{r}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                            <p className="mt-2 pt-1.5 border-t border-orange-200 opacity-70 italic text-orange-700">
                                 以上為 AI 延伸推論，需結合案件背景由法務人員判斷，非正式法律意見。
                             </p>
                         </div>
@@ -277,15 +319,24 @@ function ClauseCard({ clause, view }: { clause: ClauseDiff; view: 'diff' | 'side
 }
 
 function exportSummary(result: ContractDiffResult) {
+    const role = ROLE_LABEL[result.resolvedRole] ?? ROLE_LABEL.UNCLEAR;
     const lines: string[] = [
         '=== 合約版本差異摘要報告 ===',
-        `整體風險：${RISK_STYLES[result.overallRiskLevel].label}`,
+        `分析角色：${role.label}`,
+        `判斷依據：${result.roleResolution || '—'}`,
+        `對我方整體風險：${RISK_STYLES[result.overallRiskLevel].label}`,
         `總變動：${result.totalChanges} 條（新增 ${result.addedClauses}、刪除 ${result.removedClauses}、修改 ${result.modifiedClauses}）`,
         '',
-        '【摘要】',
+        '【整體摘要】',
         result.summary,
         '',
-        '【主要風險】',
+        '【我方視角整體影響】',
+        result.ourSideSummary || '—',
+        '',
+        '【相對人視角整體影響】',
+        result.counterpartyImpactSummary || '—',
+        '',
+        '【主要風險（我方視角）】',
         ...result.majorRisks.map((r, i) => `${i + 1}. ${r}`),
         '',
         '【建議事項】',
@@ -297,11 +348,14 @@ function exportSummary(result: ContractDiffResult) {
     result.clauses
         .filter(c => c.changeType !== 'UNCHANGED')
         .forEach(c => {
+            const dir = RISK_DIRECTION_STYLE[c.riskDirection]?.label || '—';
             lines.push('');
-            lines.push(`【${CHANGE_STYLES[c.changeType].label}】${c.clauseTitle}（${IMPACT_STYLES[c.impactLevel].label}）`);
+            lines.push(`【${CHANGE_STYLES[c.changeType].label}】${c.clauseTitle}（${IMPACT_STYLES[c.impactLevel].label}｜${dir}）`);
             if (c.oldText) lines.push(`舊版：${c.oldText}`);
             if (c.newText) lines.push(`新版：${c.newText}`);
-            if (c.impactDescription) lines.push(`影響：${c.impactDescription}`);
+            if (c.impactDescription) lines.push(`變動說明：${c.impactDescription}`);
+            if (c.ourSideImpact) lines.push(`我方視角：${c.ourSideImpact}`);
+            if (c.counterpartyImpact) lines.push(`相對人視角：${c.counterpartyImpact}`);
             if (c.reviewComment) lines.push(`審約：${c.reviewComment}`);
         });
 
@@ -323,7 +377,8 @@ export default function ContractDiffPanel() {
     const [result, setResult] = useState<ContractDiffResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [view, setView] = useState<'diff' | 'side'>('side');
-    const [filter, setFilter] = useState<ChangeType | 'ALL'>('ALL');
+    const [filter, setFilter] = useState<ChangeType | 'ALL' | 'OUR_DISADVANTAGE' | 'OUR_ADVANTAGE'>('ALL');
+    const [ourRole, setOurRole] = useState<OurRole>('AUTO');
 
     const handleCompare = async () => {
         setLoading(true);
@@ -334,7 +389,7 @@ export default function ContractDiffPanel() {
             const res = await fetch('/api/contract-diff', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ versionA, versionB, reviewComments }),
+                body: JSON.stringify({ versionA, versionB, reviewComments, ourRole }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error ?? '比對失敗');
@@ -348,9 +403,15 @@ export default function ContractDiffPanel() {
 
     const canSubmit = versionA.trim().length > 10 && versionB.trim().length > 10;
 
-    const filteredClauses = result?.clauses.filter(c =>
-        filter === 'ALL' ? c.changeType !== 'UNCHANGED' : c.changeType === filter
-    ) ?? [];
+    const filteredClauses = result?.clauses.filter(c => {
+        if (filter === 'ALL') return c.changeType !== 'UNCHANGED';
+        if (filter === 'OUR_DISADVANTAGE') return c.riskDirection === 'INCREASE_OUR_RISK';
+        if (filter === 'OUR_ADVANTAGE') return c.riskDirection === 'DECREASE_OUR_RISK';
+        return c.changeType === filter;
+    }) ?? [];
+
+    const disadvCount = result?.clauses.filter(c => c.riskDirection === 'INCREASE_OUR_RISK').length ?? 0;
+    const advCount    = result?.clauses.filter(c => c.riskDirection === 'DECREASE_OUR_RISK').length ?? 0;
 
     const rs = result ? (RISK_STYLES[result.overallRiskLevel as keyof typeof RISK_STYLES] ?? RISK_STYLES['NONE']) : null;
     const noChanges = result ? result.totalChanges === 0 : false;
@@ -382,6 +443,32 @@ export default function ContractDiffPanel() {
                     onChange={setVersionB}
                     accentColor="green"
                 />
+            </div>
+
+            {/* 我方角色 — 影響風險方向判讀 */}
+            <div className="rounded-lg border border-purple-100 bg-white/60 px-3 py-2.5 space-y-2">
+                <p className="text-xs font-semibold text-gray-600">
+                    👤 我方角色
+                    <span className="ml-1 font-normal text-gray-400">（影響風險方向判讀，務必先指定）</span>
+                </p>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+                    {([
+                        { v: 'AUTO',     label: '🤖 AI 自動判斷' },
+                        { v: 'PARTY_A',  label: '🅰️ 我方為甲方' },
+                        { v: 'PARTY_B',  label: '🅱️ 我方為乙方' },
+                    ] as { v: OurRole; label: string }[]).map(opt => (
+                        <button
+                            key={opt.v}
+                            onClick={() => setOurRole(opt.v)}
+                            className={`flex-1 px-3 py-1.5 transition-colors ${ourRole === opt.v ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                    💡 相同的修訂會因角色不同而方向相反。例：違約金被刪除 — 甲方視角為「失去保障」（對我方不利）；乙方視角為「責任減輕」（對我方有利）。
+                </p>
             </div>
 
             {/* Review comments toggle */}
@@ -452,12 +539,31 @@ export default function ContractDiffPanel() {
                         </div>
                     ) : (
                         <>
+                            {/* 我方角色 + 分視角摘要 */}
+                            {(() => {
+                                const role = ROLE_LABEL[result.resolvedRole] ?? ROLE_LABEL.UNCLEAR;
+                                return (
+                                    <div className={`rounded-lg border px-3 py-2.5 ${role.badge}`}>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-base">{role.icon}</span>
+                                            <span className="text-xs font-bold">本次分析角色：{role.label}</span>
+                                            <span className="text-xs px-1.5 py-0.5 rounded border border-current/40 bg-white/50">
+                                                對我方不利 {disadvCount} 項 ／ 對我方有利 {advCount} 項
+                                            </span>
+                                        </div>
+                                        {result.roleResolution && (
+                                            <p className="text-xs mt-1 leading-relaxed opacity-90">判斷依據：{result.roleResolution}</p>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
                             {/* Risk banner */}
                             <div className={`rounded-lg px-4 py-3 border flex items-start gap-3 ${rs.banner}`}>
                                 <span className="text-xl mt-0.5">{rs.icon}</span>
                                 <div className="flex-1">
                                     <p className="text-sm font-bold">
-                                        整體風險評估：{rs.label} ／ 共 {result.totalChanges} 處變動
+                                        對我方整體風險：{rs.label} ／ 共 {result.totalChanges} 處變動
                                         （新增 {result.addedClauses}、刪除 {result.removedClauses}、修改 {result.modifiedClauses}）
                                     </p>
                                     <p className="text-xs mt-0.5 leading-relaxed opacity-90">{result.summary}</p>
@@ -469,6 +575,24 @@ export default function ContractDiffPanel() {
                                     ↓ 匯出摘要
                                 </button>
                             </div>
+
+                            {/* 分視角整體摘要 */}
+                            {(result.ourSideSummary || result.counterpartyImpactSummary) && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {result.ourSideSummary && (
+                                        <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+                                            <p className="text-xs font-bold text-indigo-700 mb-1">👤 我方視角整體影響</p>
+                                            <p className="text-xs text-indigo-800 leading-relaxed">{result.ourSideSummary}</p>
+                                        </div>
+                                    )}
+                                    {result.counterpartyImpactSummary && (
+                                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                            <p className="text-xs font-bold text-gray-600 mb-1">🤝 相對人視角整體影響</p>
+                                            <p className="text-xs text-gray-700 leading-relaxed">{result.counterpartyImpactSummary}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* AI 掃描覆蓋率說明 */}
                             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800 space-y-1 leading-relaxed">
@@ -533,14 +657,17 @@ export default function ContractDiffPanel() {
                                 </div>
 
                                 <div className="flex gap-1.5 flex-wrap">
-                                    {(['ALL', 'MODIFIED', 'ADDED', 'REMOVED'] as const).map(f => {
-                                        const count = f === 'ALL'
-                                            ? result.totalChanges
-                                            : result.clauses.filter(c => c.changeType === f).length;
+                                    {(['ALL', 'OUR_DISADVANTAGE', 'OUR_ADVANTAGE', 'MODIFIED', 'ADDED', 'REMOVED'] as const).map(f => {
+                                        let count = 0;
+                                        let label = '';
+                                        let style = 'bg-gray-700 text-white';
+                                        if (f === 'ALL') { count = result.totalChanges; label = '全部'; style = 'bg-gray-700 text-white'; }
+                                        else if (f === 'OUR_DISADVANTAGE') { count = disadvCount; label = '⚠️ 對我方不利'; style = 'bg-red-600 text-white'; }
+                                        else if (f === 'OUR_ADVANTAGE')    { count = advCount;    label = '✅ 對我方有利'; style = 'bg-green-600 text-white'; }
+                                        else { count = result.clauses.filter(c => c.changeType === f).length; label = CHANGE_STYLES[f].label;
+                                            style = f === 'ADDED' ? 'bg-green-600 text-white' : f === 'REMOVED' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white';
+                                        }
                                         const active = filter === f;
-                                        const style = f === 'ALL' ? 'bg-gray-700 text-white' :
-                                            f === 'ADDED' ? 'bg-green-600 text-white' :
-                                            f === 'REMOVED' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white';
                                         return (
                                             <button
                                                 key={f}
@@ -549,7 +676,7 @@ export default function ContractDiffPanel() {
                                                     active ? style : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
                                                 }`}
                                             >
-                                                {f === 'ALL' ? '全部' : CHANGE_STYLES[f].label} ({count})
+                                                {label} ({count})
                                             </button>
                                         );
                                     })}
