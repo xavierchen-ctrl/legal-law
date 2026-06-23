@@ -204,9 +204,6 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
         </div>
         <div className="flex gap-4 items-center">
           <GcisModalButton />
-          <Link href="/api/notification/check-overdue" target="_blank" className="btn" style={{ background: 'var(--secondary)', color: 'var(--secondary-foreground)' }}>
-            檢查逾期 (手動觸發)
-          </Link>
           {/* <ManualScanButton /> Hidden for hotfix */}
           <a href="https://docs.google.com/spreadsheets/d/1S8CG7PyILAGK57Y7zNzwf4B9_XX4kGmzeBH84bUjhwE/edit" target="_blank" className="btn btn-primary">
             前往試算表作業
