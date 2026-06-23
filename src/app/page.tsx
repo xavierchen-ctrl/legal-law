@@ -209,6 +209,9 @@ export default async function Dashboard(props: { searchParams?: Promise<{ showAl
             前往試算表作業
           </a>
           <div className="flex gap-4">
+            <Link href="/tools" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-blue-600">
+              <span>🛠️</span> AI 合約工具
+            </Link>
             <Link href="/drafting" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1 font-bold text-violet-600">
               <span>✍️</span> 文件撰擬
             </Link>
